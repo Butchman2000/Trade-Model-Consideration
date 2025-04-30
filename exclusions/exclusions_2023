@@ -1,0 +1,117 @@
+# Program: Backtest Exclusion Criterion for 2023
+# Author: Brian Anderson
+# Origin Date: 30April2025
+# Version: 1.0
+# 
+# Purpose:
+#   /Assemble market dates for critical days that most strongly affect market activity.
+#   /Specifies spans of time for which alteration of trading activity should be considered.
+#   /For example, since FOMC meetings are released around 2:30 pm, we make choices at 1:45 pm,
+#   /as to whether to withdraw trades, or make other actions (todo).
+
+from datetime import datetime, time
+
+# CPI release dates for 2023
+Date_CPI_Releases_2023 = [
+    datetime(2023, 1, 12), datetime(2023, 2, 14), datetime(2023, 3, 14), datetime(2023, 4, 12),
+    datetime(2023, 5, 10), datetime(2023, 6, 13), datetime(2023, 7, 12), datetime(2023, 8, 10),
+    datetime(2023, 9, 13), datetime(2023, 10, 12), datetime(2023, 11, 14), datetime(2023, 12, 12)
+]
+
+# FOMC announcement dates for 2023
+Date_FOMC_Announcements_2023 = [
+    datetime(2023, 2, 1), datetime(2023, 3, 22), datetime(2023, 5, 3), datetime(2023, 6, 14),
+    datetime(2023, 7, 26), datetime(2023, 9, 20), datetime(2023, 11, 1), datetime(2023, 12, 13)
+]
+
+# Powell speeches in 2023 (partial list)
+Date_Powell_Speeches_2023 = [
+    datetime(2023, 1, 10), datetime(2023, 3, 7), datetime(2023, 6, 28), datetime(2023, 8, 25),
+    datetime(2023, 10, 2), datetime(2023, 11, 9)
+]
+
+# Market half-days in 2023
+Date_Market_HalfDays_2023 = [
+    datetime(2023, 7, 3), datetime(2023, 11, 24), datetime(2023, 12, 22)
+]
+
+# Last trading day of each month in 2023
+Date_Last_Trading_Days_2023 = [
+    datetime(2023, 1, 31), datetime(2023, 2, 28), datetime(2023, 3, 31), datetime(2023, 4, 28),
+    datetime(2023, 5, 31), datetime(2023, 6, 30), datetime(2023, 7, 31), datetime(2023, 8, 31),
+    datetime(2023, 9, 29), datetime(2023, 10, 31), datetime(2023, 11, 30), datetime(2023, 12, 29)
+]
+
+# Quad Witching Dates 2023
+Date_Quad_Witching_2023 = [
+    datetime(2023, 3, 17), datetime(2023, 6, 16), datetime(2023, 9, 15), datetime(2023, 12, 15)
+]
+
+# NFP Fridays 2023 (1st Friday each month approximately)
+Date_NFP_2023 = [
+    datetime(2023, 1, 6), datetime(2023, 2, 3), datetime(2023, 3, 10), datetime(2023, 4, 7),
+    datetime(2023, 5, 5), datetime(2023, 6, 2), datetime(2023, 7, 7), datetime(2023, 8, 4),
+    datetime(2023, 9, 1), datetime(2023, 10, 6), datetime(2023, 11, 3), datetime(2023, 12, 8)
+]
+
+# Election Day (not applicable in 2023 but placeholder kept)
+Date_Election_2023 = None
+
+# Jackson Hole 2023 note (no action taken)
+# Jackson Hole 2023 occurred around August 24–26
+
+# Combine all exclusion dates into a set for faster lookup
+exclusion_dates = set(
+    Date_CPI_Releases_2023 +
+    Date_FOMC_Announcements_2023 +
+    Date_Powell_Speeches_2023 +
+    Date_Market_HalfDays_2023 +
+    Date_Last_Trading_Days_2023
+)
+
+# Function to filter out exclusion dates
+def is_valid_trading_day(date):
+    return date not in exclusion_dates
+
+# Function to determine if trades should be exited early on FOMC days
+def exit_time_on_fomc_day(date):
+    fomc_dates_only = {d.date() for d in Date_FOMC_Announcements_2023}
+    if date.date() in fomc_dates_only:
+        return (time(13, 45), time(18, 0))  # No trades 1:45 PM to 6:00 PM
+    return None
+
+# Function to determine if it's a market half-day and when trades should be exited
+def exit_time_on_half_day(date):
+    half_day_dates_only = {d.date() for d in Date_Market_HalfDays_2023}
+    if date.date() in half_day_dates_only:
+        return (time(11, 45), datetime(date.year, date.month, date.day + 1, 7, 0))
+    return None
+
+# Function for Powell speech day trade halt
+def powell_speech_blackout(date):
+    powell_dates_only = {d.date() for d in Date_Powell_Speeches_2023}
+    if date.date() in powell_dates_only:
+        return (time(14, 15), time(18, 0))  # No trades 2:15 PM to 6:00 PM
+    return None
+
+# Function for quad witching day early exit
+def quad_witching_exit_time(date):
+    quad_dates_only = {d.date() for d in Date_Quad_Witching_2023}
+    if date.date() in quad_dates_only:
+        return (time(13, 0), datetime(date.year, date.month, date.day + 1, 7, 0))
+    return None
+
+# Function for NFP timing restrictions
+def nfp_trading_restrictions(date):
+    nfp_dates_only = {d.date() for d in Date_NFP_2023}
+    if date.date() in nfp_dates_only:
+        return (None, time(10, 30))
+    elif any((date - d).days == -1 for d in Date_NFP_2023):
+        return (time(15, 15), None)
+    return None
+
+# Function for election day full halt
+def election_day_halt(date):
+    if Date_Election_2023 and date.date() == Date_Election_2023.date():
+        return (None, datetime(date.year, date.month, date.day + 1, 7, 0))
+    return None

@@ -1,0 +1,144 @@
+# Program: Main
+# Author: Brian Anderson
+# Origin Date: 30April2025
+# Version: 1.0
+#
+# Purpose:
+#   /This script acts as the main command-line interface (CLI) for the Exclusions Backtest Framework.
+#   /It allows users and collaborators to:
+#   /  - Run all test suites to validate exclusion logic for 2020–2024 (include 2019 if time available).
+#   /  - Load specific year's exclusion module for use in a trading/backtest engine.
+#   /  - Optionally visualize exclusion patterns (stub included).
+#   / Intended for collaboration between beginner and experienced developers, with modular support.
+
+import argparse
+import importlib
+import sys
+import unittest
+from datetime import datetime
+
+# -------------------------------------------
+# Argument Parsing and Command Line Handling
+# -------------------------------------------
+
+# This function handles command-line arguments.
+# Example usage:
+#   python main.py --test        -> runs all tests
+#   python main.py --year 2023   -> loads the 2023 exclusion module
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Run exclusion tests or load exclusion logic for specific backtesting years."
+    )
+    parser.add_argument(
+        '--test',
+        action='store_true',  # This is a flag. No value needed.
+        help='Run all unit tests for exclusions.'
+    )
+    parser.add_argument(
+        '--year',
+        type=int,
+        choices=[2019, 2020, 2021, 2022, 2023, 2024],
+        help='Specify a year to load exclusion logic.'
+    )
+    return parser.parse_args()
+
+# -------------------------------------------
+# Run all tests via unittest
+# -------------------------------------------
+
+# This function loads all test modules and runs them
+# Useful to verify all your logic is still correct.
+def run_all_tests():
+    test_modules = [
+        "tests.test_exclusions_2019",
+        "tests.test_exclusions_2020",
+        "tests.test_exclusions_2021",
+        "tests.test_exclusions_2022",
+        "tests.test_exclusions_2023",
+        "tests.test_exclusions_2024",
+    ]
+
+    loader = unittest.TestLoader()  # Initializes the test loader
+    suites = []
+    for module in test_modules:
+        suite = loader.loadTestsFromName(module)  # Loads tests from module
+        suites.append(suite)
+
+    full_suite = unittest.TestSuite(suites)  # Combine all suites
+    runner = unittest.TextTestRunner(verbosity=2)
+    runner.run(full_suite)  # Run all tests with visible output
+
+# -------------------------------------------
+# Connect to exclusion logic for a backtest
+# -------------------------------------------
+
+# This function dynamically loads the exclusion logic file for the specified year.
+def load_exclusion_module(year):
+    try:
+        module_name = f"exclusions.exclusions_{year}"  # Filename should match this pattern
+        exclusions = importlib.import_module(module_name)  # Import dynamically
+        print(f"\n[INFO] Loaded exclusion logic for {year}: {module_name}")
+        return exclusions
+    except ImportError as e:
+        print(f"[ERROR] Failed to load exclusion module for {year}: {e}")
+        sys.exit(1)
+
+# -------------------------------------------
+# Visualization Stub (to be implemented, or edited/disposed of by Fiverr/other)
+# -------------------------------------------
+'''
+from matplotlib import pyplot as plt
+import pandas as pd
+
+# This function is a placeholder to visually inspect exclusion days on a plot
+# Can be expanded to show heatmaps, histograms, etc.
+def visualize_exclusion_days(exclusions):
+    """
+    Convert exclusion dates to a DataFrame and visualize as a calendar heatmap or scatter.
+    """
+    all_dates = list(exclusions.exclusion_dates)
+    df = pd.DataFrame({"date": all_dates})
+    df['count'] = 1  # Dummy value just to enable plotting
+    df = df.set_index('date').resample('D').sum().fillna(0)  # Daily granularity
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(df.index, df['count'], marker='o', linestyle='')
+    plt.title("Exclusion Days Timeline")
+    plt.ylabel("Exclusion Flag")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+'''
+
+# -------------------------------------------
+# Main Entrypoint
+# -------------------------------------------
+
+# This is the main entry of the script. When you run `python main.py`, this runs.
+def main():
+    args = parse_arguments()  # Get arguments from command line
+
+    if args.test:
+        run_all_tests()  # If --test is passed
+
+    elif args.year:
+        exclusions = load_exclusion_module(args.year)  # Load logic for a given year
+
+        print("\nAvailable functions in the module:")
+        print("- is_valid_trading_day(date)")
+        print("- exit_time_on_fomc_day(date)")
+        print("- exit_time_on_half_day(date)")
+        print("- powell_speech_blackout(date)")
+        print("- quad_witching_exit_time(date)")
+        print("- nfp_trading_restrictions(date)")
+        print("- election_day_halt(date)")
+        # Uncomment below line to try visualization (once exclusions.exclusion_dates is defined):
+        # visualize_exclusion_days(exclusions)
+
+    else:
+        print("\n[INFO] No command specified. Use --help to view options.")
+
+# Required boilerplate to trigger main()
+if __name__ == '__main__':
+    main()

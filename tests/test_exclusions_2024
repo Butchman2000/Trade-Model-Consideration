@@ -1,0 +1,58 @@
+# Program: Exclusion Tester for 2024 Exclusion Program
+# Author: Brian Anderson
+# Origin Date: 30April2025
+# Version: 1.0
+#
+# Purpose:
+# /This file uses Python’s built-in unittest framework to automatically check whether
+# /my exclusion functions behave correctly for 2024.  If it works for 2024, we should be
+# /more confident that it works for the rest of the years (TODO: check this assumption's accuracy).
+
+import unittest
+from datetime import datetime
+from exclusions_2024 import (
+    is_valid_trading_day,
+    exit_time_on_fomc_day,
+    exit_time_on_half_day,
+    powell_speech_blackout,
+    quad_witching_exit_time,
+    nfp_trading_restrictions,
+    election_day_halt
+)
+
+class TestExclusionDates2024(unittest.TestCase):
+
+    def test_is_valid_trading_day(self):
+        self.assertFalse(is_valid_trading_day(datetime(2024, 1, 11)))  # CPI day
+        self.assertTrue(is_valid_trading_day(datetime(2024, 1, 12)))   # Normal day
+
+    def test_exit_time_on_fomc_day(self):
+        result = exit_time_on_fomc_day(datetime(2024, 3, 20))
+        self.assertEqual(result, (datetime.strptime("13:45", "%H:%M").time(), datetime.strptime("18:00", "%H:%M").time()))
+        self.assertIsNone(exit_time_on_fomc_day(datetime(2024, 3, 21)))
+
+    def test_exit_time_on_half_day(self):
+        result = exit_time_on_half_day(datetime(2024, 12, 24))
+        self.assertEqual(result[0], datetime.strptime("11:45", "%H:%M").time())
+        self.assertIsNone(exit_time_on_half_day(datetime(2024, 12, 25)))
+
+    def test_powell_speech_blackout(self):
+        result = powell_speech_blackout(datetime(2024, 11, 14))
+        self.assertEqual(result, (datetime.strptime("14:15", "%H:%M").time(), datetime.strptime("18:00", "%H:%M").time()))
+
+    def test_quad_witching_exit_time(self):
+        result = quad_witching_exit_time(datetime(2024, 6, 21))
+        self.assertEqual(result[0], datetime.strptime("13:00", "%H:%M").time())
+
+    def test_nfp_trading_restrictions(self):
+        self.assertEqual(nfp_trading_restrictions(datetime(2024, 5, 3)), (None, datetime.strptime("10:30", "%H:%M").time()))
+        self.assertEqual(nfp_trading_restrictions(datetime(2024, 5, 2)), (datetime.strptime("15:15", "%H:%M").time(), None))
+        self.assertIsNone(nfp_trading_restrictions(datetime(2024, 5, 4)))
+
+    def test_election_day_halt(self):
+        result = election_day_halt(datetime(2024, 11, 5))
+        self.assertEqual(result[0], None)
+        self.assertEqual(result[1].time(), datetime.strptime("07:00", "%H:%M").time())
+
+if __name__ == '__main__':
+    unittest.main()

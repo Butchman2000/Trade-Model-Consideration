@@ -1,0 +1,106 @@
+# Helper Function: vix_whipsaw_filter
+# Author: Brian Anderson
+# Origin Date: 30April2025
+# Version: 1.0
+#
+# Purpose:
+#   /An advanced, state-aware volatility filter that uses tiered logic.
+#   /It monitors for large drops and subsequent rebounds in VIX.
+#   /Manages yellow-light and red-light regimes with cooldown enforcement.
+
+import pandas as pd
+
+def vix_whipsaw_filter(current_date, vix_data, state):
+    """
+    Evaluates whether VIX behavior triggers yellow or red regime changes.
+
+    Parameters:
+    - current_date: datetime
+    - vix_data: pd.Series (daily VIX close values)
+    - state: dict tracking:
+        - cooldown_until
+        - observation_day
+        - red_light_until
+        - red_count
+        - volatility_floor
+
+    Returns:
+    - decision: str (e.g., 'normal', 'cooling_triggered', 'cooldown_active', 'red_light_active')
+    - updated state: dict
+    """
+
+    # Safety check: skip if data is missing for current date
+    if current_date not in vix_data.index:
+        return 'normal', state
+
+    # Red light logic overrides everything
+    if state.get('red_light_until') and current_date <= state['red_light_until']:
+        current_vix = vix_data.loc[current_date]
+        # Hold red until VIX closes below volatility floor or below 38
+        recent_window = vix_data[current_date - pd.Timedelta(days=21):current_date]
+        three_week_low = recent_window.min() if not recent_window.empty else current_vix
+        volatility_floor = min(three_week_low, 38)
+
+        if current_vix < volatility_floor:
+            state.pop('red_light_until', None)
+            state.pop('volatility_floor', None)
+            return 'normal', state  # Exit red
+        else:
+            state['volatility_floor'] = volatility_floor  # store it for transparency
+            return 'red_light_active', state
+
+    # Yellow light cooldown logic
+    if state.get('cooldown_until') and current_date <= state['cooldown_until']:
+        return 'cooldown_active', state
+
+    # Get today and yesterday's VIX
+    today_vix = vix_data.loc[current_date]
+    idx = vix_data.index.get_loc(current_date)
+    if idx == 0:
+        return 'normal', state  # No previous day
+
+    prev_date = vix_data.index[idx - 1]
+    prev_vix = vix_data.loc[prev_date]
+
+    # === Yellow light trigger (8% drop, VIX > 30) ===
+    drop_pct = (prev_vix - today_vix) / prev_vix
+    if prev_vix > 30 and drop_pct > 0.08:
+        state['observation_day'] = current_date + pd.Timedelta(days=1)
+        state['last_trigger_day'] = current_date
+        return 'cooling_triggered', state
+
+    # === Red light trigger (any 7% drop followed by 4% rebound) ===
+    if drop_pct > 0.07:
+        state['observe_red_on'] = current_date + pd.Timedelta(days=1)
+        state['red_watch'] = True
+        return 'red_watch_triggered', state
+
+    # === Handle yellow observation logic ===
+    if state.get('observation_day') == current_date:
+        rebound_pct = (today_vix - prev_vix) / prev_vix
+        if rebound_pct >= 0.045:
+            state['cooldown_until'] = current_date + pd.Timedelta(hours=72)
+            state.pop('observation_day', None)
+            return 'revert_to_strict', state
+        else:
+            state.pop('observation_day', None)
+            return 'normal', state
+
+    # === Handle red observation logic ===
+    if state.get('observe_red_on') == current_date and state.get('red_watch'):
+        rebound_pct = (today_vix - prev_vix) / prev_vix
+        if rebound_pct >= 0.04:
+            # Escalate to red
+            state['red_count'] = state.get('red_count', 0) + 1
+            cooldown_hours = 72 if state['red_count'] == 1 else 144
+            state['red_light_until'] = current_date + pd.Timedelta(hours=cooldown_hours)
+            state['red_watch'] = False
+            state.pop('observe_red_on', None)
+            return 'red_light_active', state
+        else:
+            # No false signal, clear flag
+            state['red_watch'] = False
+            state.pop('observe_red_on', None)
+            return 'normal', state
+
+    return 'normal', state

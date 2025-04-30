@@ -1,0 +1,195 @@
+# Program: twelve_one_momentum_model.py
+# Author: Brian Anderson
+# Origin Date: 30April2025
+# Version: 1.0
+# 
+# Purpose:
+#   /Trading model connected to exclusion logic (support for 2020–2024)
+
+from datetime import datetime
+import importlib
+import pandas as pd
+import yfinance as yf
+import numpy as np
+
+# --- SETTINGS ---
+START_DATE = "2019-01-01"
+END_DATE = "2024-01-01"
+TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "JPM", "CVNA", "PLTR"]  # example library
+LOOKBACK_MONTHS = 12
+SKIP_MONTHS = 1
+TOP_DECILE = 0.10
+BOTTOM_DECILE = 0.10
+
+# ---
+# Function: load_exclusions_by_year
+# Description:
+#   /Dynamically loads the exclusion module for a given year.
+#   /Assumes a file exists in exclusions/ named exclusions_<year>.py
+# Example:
+#   /year = 2024
+#   /exclusions = load_exclusions_by_year(2024)
+#   /exclusions.is_valid_trading_day(datetime(...))
+# ---
+
+def load_exclusions_by_year(year):
+    try:
+        module_name = f"exclusions.exclusions_{year}"
+        exclusions = importlib.import_module(module_name)
+        return exclusions
+    except ImportError as e:
+        print(f"[ERROR] Could not load exclusions for year {year}.")
+        print("[HINT] Ensure 'exclusions/exclusions_<year>.py' exists and is spelled correctly.")
+        return None  # More beginner-friendly fallback than raising error
+
+# ---
+# Function: should_trade_on
+# Description:
+#   /Applies all relevant exclusion filters to a date.
+#   /Returns False if any filter deems trading inappropriate.
+# ---
+
+def should_trade_on(date):
+    year = date.year
+    exclusions = load_exclusions_by_year(year)
+
+    if exclusions is None:
+        print("[WARNING] No exclusions module loaded — assuming it's okay to trade.")
+        return True
+
+    if not exclusions.is_valid_trading_day(date):
+        print(f"[BLOCKED] {date.date()} is not a valid trading day.")
+        return False
+
+    # These do not block trading, but serve as warnings
+    if exclusions.exit_time_on_fomc_day(date):
+        print("[NOTE] Early exit due to FOMC event.")
+    if exclusions.exit_time_on_half_day(date):
+        print("[NOTE] Half-day — trade cautiously or exit early.")
+    if exclusions.powell_speech_blackout(date):
+        print("[NOTE] Powell speech blackout window in effect.")
+    if exclusions.quad_witching_exit_time(date):
+        print("[NOTE] Quad witching day early close in effect.")
+    if exclusions.nfp_trading_restrictions(date):
+        print("[NOTE] NFP release — time restriction in effect.")
+    if exclusions.election_day_halt(date):
+        print("[NOTE] Election day halt — do not trade.")
+
+    return True
+
+# ---
+# Function: run_model
+# Description:
+#   /The main callable logic for executing a strategy.
+#   /This stub will eventually house signal generation logic.
+# ---
+
+def run_model(data, date):
+    if not should_trade_on(date):
+        return None
+
+    # Model logic starts below:
+    
+  
+    # --- Data download ---
+    # TODO: Determine source of download data.
+    data = yf.download(TICKERS, start=START_DATE, end=date.strftime("%Y-%m-%d"), interval='1mo', auto_adjust=True)['Adj Close']
+    data = data.dropna(how="any", axis=1)
+
+    if len(data) < (LOOKBACK_MONTHS + SKIP_MONTHS + 2):
+        print("[INFO] Not enough data to calculate momentum scores.")
+        return None
+
+    # --- Calculate the monthly returns ---
+    monthly_returns = data.pct_change()
+    momentum_scores = data.pct_change(periods=LOOKBACK_MONTHS + SKIP_MONTHS).shift(SKIP_MONTHS)
+
+    # --- Setup the rebalance dates ---
+    rebalance_dates = momentum_scores.index[LOOKBACK_MONTHS+SKIP_MONTHS:]
+    if date not in rebalance_dates:
+        print("[INFO] Date not a rebalance point.")
+        return None
+
+    score = momentum_scores.loc[date].dropna()
+    if len(score) < 5:
+        print("[INFO] Insufficient data on selected date.")
+        return None
+
+    score_ranked = score.rank(pct=True)
+    longs = score_ranked[score_ranked >= (1 - TOP_DECILE)].index
+    shorts = score_ranked[score_ranked <= BOTTOM_DECILE].index
+
+    try:
+        next_month = monthly_returns.index[monthly_returns.index.get_loc(date)+1]
+    except IndexError:
+        print("[INFO] Next month data unavailable.")
+        return None
+
+    r_long = monthly_returns.loc[next_month, longs].mean()
+    r_short = monthly_returns.loc[next_month, shorts].mean()
+    net_return = r_long - r_short
+
+    portfolio_returns.append({"Date": next_month, "Long": r_long, "Short": r_short, "Net":net_return})
+
+    signal = {
+        'date': date.strftime("%Y-%m-%d"),
+        'longs': list(longs),
+        'shorts': list(shorts),
+        'r_long': round(r_long, 4),
+        'r_short': round(r_short, 4),
+        'net_return': round(net_return, 4)
+    }
+
+    print(f"[INFO] Signal generated on {date.date()}: {signal}")
+    return signal
+
+# ---
+# Performance Calculation Utilities
+# ---
+
+def compute_cagr_and_max_drawdown(signals):
+    if not signals:
+        print("[INFO] No signals to evaluate.")
+        return
+
+    df = pd.DataFrame(signals)
+    df['net_return'] = df['net_return'].astype(float)
+    df['Date'] = pd.to_datetime(df['date'])
+    df.set_index('Date', inplace=True)
+    df.sort_index(inplace=True)
+    df['equity'] = (1 + df['net_return']).cumprod()
+
+    # CAGR
+    total_years = (df.index[-1] - df.index[0]).days / 365.25
+    cagr = df['equity'].iloc[-1] ** (1 / total_years) - 1
+
+    # Max Drawdown
+    rolling_max = df['equity'].cummax()
+    drawdown = df['equity'] / rolling_max - 1
+    max_drawdown = drawdown.min()
+
+    print(f"
+Performance Summary:")
+    print(results.head())
+    print(f"CAGR: {cagr:.2%}")
+    print(f"Max Drawdown: {max_drawdown:.2%}")
+    
+# ---
+# Script entry point for manual testing
+# ---
+
+if __name__ == '__main__':
+    # Run test across 2020–2024 for March 20th
+    signals = []
+    for y in range(2020, 2025):
+        test_date = datetime(y, 3, 20)
+        print(f"
+=== Testing {test_date.date()} ===")
+        signal = run_model(data=None, date=test_date)
+        if signal:
+            print(f"[RUN] Signal: {signal}")
+            signals.append(signal)
+        else:
+            print("[SKIP] Trade blocked by exclusion logic.")
+
+    compute_cagr_and_max_drawdown(signals)

@@ -1,0 +1,75 @@
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Some important rules for stocks and options trading, and universal rules, that were on my mind.
+#    /I should probably add somewhere within the models, or probably use in __main__.
+#    /Or possibly in a submain, as a last check, before going to __main__, unsure..
+
+class TradeValidator:
+
+    # ------------------ OPTIONS-FOCUSED RULES ------------------
+
+    # Avoid low liquidity options unless ATM — low open interest (<10) can cause poor fills and wide bid/ask spreads.
+    # Exception: ATM options near expiration may gain liquidity as attention increases.
+    def should_trade_option(self, open_interest, is_atm):
+        return open_interest >= 10 or is_atm
+
+    # Avoid holding put spreads into late expiration day (past 2 PM) — gamma risk spikes, liquidity vanishes, and spreads can widen.
+    # Edge: If one leg is ITM and the other OTM, closing earlier avoids slippage and assignment risk.
+    def allow_put_spread(self, expiry_day, current_time):
+        return not (expiry_day and current_time.hour >= 14)
+
+    # Theta-capture (e.g., calendar or condor) plays depend on price staying within range.
+    # Don't exit too early if stock moves outside short strikes and expiry is >1 week away.
+    # Let time decay play out — reversion or IV contraction may restore profitability.
+    def manage_theta_capture(self, stock_outside_short_strikes, days_to_expiry):
+        return not (stock_outside_short_strikes and days_to_expiry > 7)
+
+    # Options into earnings decay quickly and may misprice risk.
+    # Avoid buying <7 days from earnings — IV crush + directional risk.
+    # Exception: Selling premium or structured spreads with defined risk.
+    def buy_pre_earnings_option(self, days_to_earnings):
+        return days_to_earnings >= 7
+
+    # ------------------ STOCK-FOCUSED RULES ------------------
+
+    # Biotech trades around clinical trial results can be binary — avoid unless:
+    # 1. Event outcome is known in advance
+    # 2. Probabilities are well-modeled
+    # 3. Optionality is priced favorably relative to IV
+    # Edge: Small exploratory positions or hedged structures may be acceptable.
+    def buy_biotech(self, pending_clinical_result, special_conditions_met):
+        return not pending_clinical_result or special_conditions_met
+
+    # ADM (Accelerated Decision-Making trades) require real-time attention.
+    # Edge: Exit fast — illiquidity or rapid reversal can make unattended exposure fatal.
+    def monitor_adm(self, position_open):
+        return not position_open  # stay on screen while ADM position exists
+
+    # Only increase size after a baseline win — confirms strategy and market behavior.
+    # Prevents revenge trades and emotional over-sizing.
+    # Edge: Define what qualifies as a 'win' — closed trade P&L or met R:R target.
+    def daily_sizing(self, has_winning_baseline):
+        return has_winning_baseline
+
+    # ------------------ UNIVERSAL/TIMING RULES ------------------
+
+    # Fed days = high volatility post-announcement (usually 2 PM).
+    # Trim exposure (especially directional or leveraged) after noon.
+    # Edge: Market often reverses initial reaction — optional trades should be flat.
+    def reduce_exposure_on_fed_day(self, is_fed_day, current_time):
+        return not (is_fed_day and current_time.hour >= 12)
+
+    # Close all positions before 1 PM on last trading day of the month.
+    # Funds often rebalance; volume spikes, spreads widen.
+    # Avoid slippage or forced pricing.
+    def close_all_positions_last_trading_day(self, is_last_trading_day, current_time):
+        return not (is_last_trading_day and current_time.hour >= 13)
+
+    # Don't blindly rely on support/resistance from charts — market memory isn't always valid.
+    # Instead, watch volume at key levels and price behavior.
+    # Test = approach/reject/retest with meaningful size and time spent.
+    def trust_support_resistance(self, volume_behavior_confirmed):
+        return volume_behavior_confirmed

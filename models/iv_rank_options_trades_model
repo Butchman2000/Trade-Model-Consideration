@@ -1,0 +1,59 @@
+# Program: iv_rank_options_trades_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /this provides a basic version of the IV Rank/Percentile options strategy.
+#    /Sell premium (e.g., strangles) when IV Rank is high,
+#    / and buy premium (e.g., straddles) when IV Rank is low.
+#    /Placeholder logic assumes daily IV values for simplicity.
+#
+# Note: Will probably need subscription to collect live IV values.
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# --- Placeholder synthetic IV dataset ---
+# Format: Date, IV (implied volatility of ATM options)
+np.random.seed(42)
+dates = pd.date_range(start='2023-01-01', periods=100, freq='D')
+iv_series = np.clip(np.random.normal(0.25, 0.05, size=100), 0.15, 0.5)  # Simulated IV range: 15%–50%
+df = pd.DataFrame({'Date': dates, 'IV': iv_series})
+df.set_index('Date', inplace=True)
+
+# --- Calculate rolling IV Rank and IV Percentile ---
+window = 30
+
+# IV Rank: Where today's IV sits relative to rolling min/max
+iv_min = df['IV'].rolling(window).min()
+iv_max = df['IV'].rolling(window).max()
+df['IV_Rank'] = (df['IV'] - iv_min) / (iv_max - iv_min)
+
+# IV Percentile: % of days in window with IV lower than today
+df['IV_Percentile'] = df['IV'].rolling(window).apply(lambda x: np.mean(x < x.iloc[-1]), raw=False)
+
+# --- Simulate Trade Signals and Return Placeholders ---
+df['Sell_Premium'] = df['IV_Rank'] > 0.70
+
+# Simulated returns: sell premium = short vol (mean reverts); buy premium = long vol
+df['Daily_Return'] = 0.0
+sell_signal_days = df['Sell_Premium']
+df.loc[sell_signal_days, 'Daily_Return'] = np.random.normal(0.01, 0.005, sell_signal_days.sum())
+df['Equity'] = (1 + df['Daily_Return']).cumprod()
+
+# --- Output ---
+print("\nIV Rank Options Strategy Backtest Results")
+print("----------------------------------------")
+print(df[['IV', 'IV_Rank', 'Sell_Premium', 'Daily_Return']].tail())
+print(f"\nTotal Sell Premium Trades: {sell_signal_days.sum()}")
+print(f"Cumulative Return (proxy): {df['Equity'].iloc[-1]:.2f}")
+print(f"Average Return per Signal: {df.loc[sell_signal_days, 'Daily_Return'].mean():.2%}")
+
+# TODO:
+# 1. Replace synthetic IV with actual implied volatility data (e.g., from ORATS or OptionMetrics).
+# 2. Model real trade P&L based on delta-neutral options pricing or backtest through options APIs.
+# 3. Include filters for earnings dates, sector, liquidity, and spread width.
+# 4. Implement controls for account apportionment and adjustment guidelines and notifications.
+# 5. Include auditting and compliance controls.

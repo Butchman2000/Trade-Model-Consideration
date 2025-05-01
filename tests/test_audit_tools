@@ -1,0 +1,63 @@
+# Program: test_audit_tools
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Provides basic functional tests for audit_tools module to validate:
+#    /1. Logging behavior for audit events
+#    /2. External approval logic functionality
+
+import os
+import json
+from audit.audit_tools import ComplianceLogger, wait_for_external_approval
+from datetime import datetime
+
+def test_log_event():
+    # Test for correct logging behavior and file output
+    test_file = "test_audit_log.json"
+
+    # Clean up any previous test file to ensure a clean test environment
+    if os.path.exists(test_file):
+        os.remove(test_file)
+
+    # Initialize a logger instance
+    logger = ComplianceLogger(test_file)
+
+    # Log a test event with known values
+    result = logger.log_event("TEST", "UNIT_TEST", 42.123456, "unit test entry")
+
+    # Assertions to verify correct logging
+    assert result["ticker"] == "TEST"              # Ensure ticker is logged correctly
+    assert result["event_type"] == "UNIT_TEST"    # Ensure event type is correct
+    assert os.path.exists(test_file)               # Log file must be created
+
+    # Read back from file and verify structure and content
+    with open(test_file) as f:
+        lines = f.readlines()
+        assert len(lines) == 1
+        data = json.loads(lines[0])
+        assert data["value"] == 42.1235            # Rounded value expected in JSON output
+
+    print("✓ test_log_event passed")
+
+def test_wait_for_external_approval():
+    # Test to validate the wait-and-confirm behavior using a JSON flag
+    test_flag = "test_approval_flag.json"
+
+    # Simulate an external approval file (normally done by a human or external script)
+    with open(test_flag, 'w') as f:
+        json.dump({
+            "approved": True,
+            "approved_by": "tester@example.com",
+            "timestamp": datetime.now().isoformat()
+        }, f)
+
+    # Call the wait function — should pass immediately since flag is prewritten
+    wait_for_external_approval(test_flag, check_interval=1)
+    print("CHECK- test_wait_for_external_approval passed")
+
+if __name__ == "__main__":
+    # Execute both test functions when this file is run directly
+    test_log_event()
+    test_wait_for_external_approval()

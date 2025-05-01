@@ -1,0 +1,81 @@
+# Program: post_earnings_drift_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#   /This enables gaining alpha from the Post-Earnings Announcement Drift (PEAD) effect.
+#   /Stocks that experience strong positive earnings surprises and upward price reactions
+#   /will tend to continue drifting upward over the following days.
+
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+
+# --- Placeholder: List of earnings dates and surprise info (to be replaced with real data) ---
+# Expected format: Date, Ticker, Surprise, ClosePriceOnEarningsDay
+sample_earnings_data = [
+    {"Date": "2023-05-01", "Ticker": "AAPL", "Surprise": 0.06, "Price": 170.00},
+    {"Date": "2023-08-01", "Ticker": "MSFT", "Surprise": 0.08, "Price": 330.00},
+    {"Date": "2023-11-01", "Ticker": "GOOGL", "Surprise": 0.07, "Price": 135.00},
+]
+earnings_df = pd.DataFrame(sample_earnings_data)
+earnings_df['Date'] = pd.to_datetime(earnings_df['Date'])
+
+# --- Strategy Settings ---
+HOLD_DAYS = 7
+MIN_SURPRISE = 0.05
+SLIPPAGE = 0.001  # 0.1% slippage
+
+# --- Backtest ---
+trades = []
+
+for _, row in earnings_df.iterrows():
+    ticker = row['Ticker']
+    earnings_date = row['Date']
+    surprise = row['Surprise']
+    if surprise < MIN_SURPRISE:
+        continue
+
+    # Download price data for 10 days after earnings
+    end_date = earnings_date + timedelta(days=HOLD_DAYS + 3)
+    hist = yf.download(ticker, start=earnings_date, end=end_date.strftime('%Y-%m-%d'))
+    hist = hist.dropna()
+
+    if len(hist) < HOLD_DAYS:
+        continue
+
+    # Assume buy at next open after earnings date
+    try:
+        entry_price = hist.iloc[1]['Open'] * (1 + SLIPPAGE)
+        exit_price = hist.iloc[HOLD_DAYS]['Close'] * (1 - SLIPPAGE)
+        ret = (exit_price - entry_price) / entry_price
+        trades.append({
+            'Ticker': ticker,
+            'Entry_Date': hist.index[1],
+            'Exit_Date': hist.index[HOLD_DAYS],
+            'Entry_Price': round(entry_price, 2),
+            'Exit_Price': round(exit_price, 2),
+            'Return': round(ret, 5)
+        })
+    except:
+        continue
+
+# --- Results ---
+results = pd.DataFrame(trades)
+results['Equity'] = (1 + results['Return']).cumprod()
+
+print("\nPost-Earnings Drift Strategy Backtest Results")
+print("---------------------------------------------")
+print(results)
+print(f"\nCAGR (proxy): {(1 + results['Return'].mean()) ** 252 - 1:.2%}")
+print(f"Average Return: {results['Return'].mean():.2%}")
+print(f"Win Rate: {(results['Return'] > 0).mean():.2%}")
+
+# --- TODO List ---
+#
+# 1. Integrate with actual earnings surprise data (Zacks, I/B/E/S, or scrape).
+# 2. Incorporate volume filter and sector neutrality if needed.
+# 3. Add optional short-side strategy for negative surprise drift.
+# 4. Determine apportionment criteria here, or in main or something.
+# 5. Incorporate auditing and compliance controls.

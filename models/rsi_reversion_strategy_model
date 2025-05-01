@@ -1,0 +1,78 @@
+# Program: rsi_reversion_strategy_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Backtest a basic RSI mean reversion strategy.
+#    /Buy oversold stocks when RSI(14) < 30 and exit when RSI crosses above 50.
+#    /Designed for short-term equity trades.
+#
+
+import yfinance as yf
+import pandas as pd
+import numpy as np
+
+# --- Download sample equity data ---
+ticker = 'AAPL'
+data = yf.download(ticker, start='2020-01-01', end='2024-01-01')
+data = data[['Close']].copy()
+
+# --- RSI Calculation Function ---
+def compute_rsi(series, window=14):
+    delta = series.diff()
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    avg_gain = pd.Series(gain).rolling(window=window).mean()
+    avg_loss = pd.Series(loss).rolling(window=window).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+# --- Generate RSI and Signals ---
+data['RSI'] = compute_rsi(data['Close'])
+data['Signal'] = (data['RSI'] < 30)
+
+# --- Backtest Logic ---
+trades = []
+position = False
+entry_price = None
+
+for i in range(1, len(data)):
+    row = data.iloc[i]
+    prev_rsi = data.iloc[i - 1]['RSI']
+
+    if not position and row['Signal']:
+        entry_price = row['Close'] * 1.001  # simulate 0.1% entry slippage
+        entry_date = data.index[i]
+        position = True
+    elif position and row['RSI'] > 50:
+        exit_price = row['Close'] * 0.999  # simulate 0.1% exit slippage
+        exit_date = data.index[i]
+        ret = (exit_price - entry_price) / entry_price
+        trades.append({
+            'Entry_Date': entry_date,
+            'Exit_Date': exit_date,
+            'Entry_Price': round(entry_price, 2),
+            'Exit_Price': round(exit_price, 2),
+            'Return': round(ret, 5)
+        })
+        position = False
+
+# --- Results ---
+results = pd.DataFrame(trades)
+results['Equity'] = (1 + results['Return']).cumprod()
+
+print("\nRSI Reversion Strategy Backtest Results")
+print("--------------------------------------")
+print(results)
+print(f"\nCumulative Return: {results['Equity'].iloc[-1]:.2f}")
+print(f"Avg Return per Trade: {results['Return'].mean():.2%}")
+print(f"Win Rate: {(results['Return'] > 0).mean():.2%}")
+
+# --- TODO List ---
+# 1. Use a stock universe or screen for liquid candidates.
+# 2. Add stop-loss logic and trade holding cap.
+# 3. Test with intraday entry/exit prices for better realism.
+# 4. Implement account apportionment controls here in main or something.
+# 5. Incorporate the auditing and compliance controls necessary.

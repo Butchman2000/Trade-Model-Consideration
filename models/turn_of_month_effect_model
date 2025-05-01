@@ -1,0 +1,99 @@
+# Program: turn_of_month_effect_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /We can check the turn-of-the-month (TOM) effect, which seeks to capture structural equity
+#    /market strength around month-end and start-of-month flows (e.g., payroll contributions and
+#    /portfolio rebalancing).
+#    /This supports action of buying SPY two trading days before month-end, exits two trading days
+#    /after month-start.
+#
+# Note: Will need to consider account amount apportionment, and how exclusion code interferes.
+
+
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+
+# --- Download SPY historical daily data ---
+data = yf.download('SPY', start='2005-01-01', end='2024-01-01')
+data = data[['Open', 'Close']].copy()
+data['Return'] = data['Close'].pct_change()
+data = data.dropna()
+
+# --- Identify Turn-of-the-Month Dates ---
+data['Date'] = data.index
+
+def get_tom_dates(df):
+    df['Month'] = df['Date'].dt.month
+    df['Year'] = df['Date'].dt.year
+    tom_signals = []
+
+    grouped = df.groupby(['Year', 'Month'])
+    for (_, _), group in grouped:
+        group = group.sort_values('Date')
+        if len(group) < 6:
+            continue
+        entry_date = group.iloc[-3]['Date']  # 2 trading days before month-end
+        exit_date = group.iloc[2]['Date']    # 2 trading days after month-start
+        tom_signals.append((entry_date, exit_date))
+
+    return tom_signals
+
+# --- Run Backtest with Slippage ---
+SLIPPAGE = 0.001  # 0.1% slippage on both entry and exit
+
+tom_periods = get_tom_dates(data)
+trades = []
+
+for entry_date, exit_date in tom_periods:
+    if entry_date not in data.index or exit_date not in data.index:
+        continue
+
+    # Simulate buying at slightly worse price (entry slippage)
+    entry_price = data.loc[entry_date, 'Close'] * (1 + SLIPPAGE)
+    # Simulate selling at slightly worse price (exit slippage)
+    exit_price = data.loc[exit_date, 'Close'] * (1 - SLIPPAGE)
+
+    ret = (exit_price - entry_price) / entry_price
+    trades.append({
+        'Entry': entry_date,
+        'Exit': exit_date,
+        'Entry_Price': round(entry_price, 2),
+        'Exit_Price': round(exit_price, 2),
+        'Return': round(ret, 5)
+    })
+
+# --- Results Summary ---
+results = pd.DataFrame(trades)
+results['Equity'] = (1 + results['Return']).cumprod()
+
+# CAGR calculation
+start_date = results['Entry'].iloc[0]
+end_date = results['Exit'].iloc[-1]
+total_years = (end_date - start_date).days / 365.25
+cagr = results['Equity'].iloc[-1] ** (1 / total_years) - 1
+
+# Max Drawdown calculation
+rolling_max = results['Equity'].cummax()
+drawdown = results['Equity'] / rolling_max - 1
+max_drawdown = drawdown.min()
+
+# Win rate
+win_rate = (results['Return'] > 0).mean()
+
+# --- Print Results ---
+print("\nTurn-of-the-Month Strategy Backtest Results")
+print("------------------------------------------")
+print(results.head())
+print(f"\nCAGR: {cagr:.2%}")
+print(f"Max Drawdown: {max_drawdown:.2%}")
+print(f"Win Rate: {win_rate:.2%}")
+print(f"Total Trades: {len(results)}")
+
+# --- TODO List ---
+#
+# 1. ...
+# 2. Incorporate auditing and compliance controls.

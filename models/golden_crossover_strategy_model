@@ -1,0 +1,69 @@
+# Program: golden_cross_strategy_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#   /Enable evaluation of a commonly-known moving average crossover strategy.
+#   /Generate long entries when 50-day SMA crosses above 200-day SMA (Golden Cross).
+#   /Exit position when 50-day crosses below 200-day (Death Cross).
+
+import yfinance as yf
+import pandas as pd
+
+# --- Download data ---
+ticker = 'SPY'
+data = yf.download(ticker, start='2000-01-01', end='2025-05-01')
+data = data[['Close']].copy()
+
+# --- Compute SMAs ---
+data['SMA_50'] = data['Close'].rolling(50).mean()
+data['SMA_200'] = data['Close'].rolling(200).mean()
+data.dropna(inplace=True)
+
+# --- Generate signals ---
+data['Position'] = 0
+position = 0
+entry_price = 0
+trades = []
+
+for i in range(1, len(data)):
+    today = data.iloc[i]
+    yesterday = data.iloc[i - 1]
+
+    # Entry signal
+    if position == 0 and yesterday['SMA_50'] < yesterday['SMA_200'] and today['SMA_50'] > today['SMA_200']:
+        entry_price = today['Close'] * 1.001  # 0.1% entry slippage
+        entry_date = data.index[i]
+        position = 1
+
+    # Exit signal
+    elif position == 1 and yesterday['SMA_50'] > yesterday['SMA_200'] and today['SMA_50'] < today['SMA_200']:
+        exit_price = today['Close'] * 0.999  # 0.1% exit slippage
+        exit_date = data.index[i]
+        trades.append({
+            'Entry_Date': entry_date,
+            'Exit_Date': exit_date,
+            'Entry_Price': round(entry_price, 2),
+            'Exit_Price': round(exit_price, 2),
+            'Return': round((exit_price - entry_price) / entry_price, 5)
+        })
+        position = 0
+
+# --- Results ---
+results = pd.DataFrame(trades)
+results['Equity'] = (1 + results['Return']).cumprod()
+
+print("\nGolden Cross Strategy Backtest Results")
+print("--------------------------------------")
+print(results)
+print(f"\nCumulative Return: {results['Equity'].iloc[-1]:.2f}")
+print(f"Avg Return per Trade: {results['Return'].mean():.2%}")
+print(f"Win Rate: {(results['Return'] > 0).mean():.2%}")
+
+# --- TODO List ---
+# 1. Add logic for short-side or inverse ETF entry on Death Cross.
+# 2. Support multi-asset universe loop.
+# 3. Track drawdown, equity curve, and risk-adjusted returns.
+# 4. Implement account apportionment controls here or in main or elsewhere.
+# 5. Incorporate auditing and compliance controls.

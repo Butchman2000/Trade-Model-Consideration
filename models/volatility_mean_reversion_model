@@ -1,0 +1,50 @@
+# Program: volatility_mean_reversion_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#   /Collect value based on a volatility mean reversion strategy.
+#   /Sell volatility (e.g., short straddle/strangle proxy) when implied volatility is unusually high.
+#   /Assumes reversion in IV produces a net positive P&L from theta decay and vega exposure.
+#
+# Note: Will probably need a subscription in the future for options historical, and live, collection.
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# --- Placeholder synthetic IV data (e.g., VIX or 30-day IV) ---
+np.random.seed(1)
+dates = pd.date_range(start='2023-01-01', periods=120)
+iv = np.clip(np.random.normal(0.25, 0.06, size=120), 0.15, 0.6)
+df = pd.DataFrame({'Date': dates, 'IV': iv})
+df.set_index('Date', inplace=True)
+
+# --- Calculate IV percentile (lookback 60 days) ---
+lookback = 60
+df['IV_Percentile'] = df['IV'].rolling(lookback).apply(lambda x: np.mean(x < x.iloc[-1]), raw=False)
+
+# --- Signal: short vol when IV percentile > 90% ---
+df['Sell_Vol'] = df['IV_Percentile'] > 0.9
+
+# --- Simulate trade P&L (proxy for short straddle decay with mean reversion) ---
+df['Daily_Return'] = 0.0
+signal_days = df['Sell_Vol']
+df.loc[signal_days, 'Daily_Return'] = np.random.normal(0.015, 0.01, signal_days.sum())
+df['Equity'] = (1 + df['Daily_Return']).cumprod()
+
+# --- Results ---
+print("\nVolatility Mean Reversion Strategy Results")
+print("-----------------------------------------")
+print(df[['IV', 'IV_Percentile', 'Sell_Vol', 'Daily_Return']].tail())
+print(f"\nTotal Signals: {signal_days.sum()}")
+print(f"Final Equity (proxy): {df['Equity'].iloc[-1]:.2f}")
+print(f"Mean Return on Signal Days: {df.loc[signal_days, 'Daily_Return'].mean():.2%}")
+
+# --- TODO List ---
+# 1. Replace placeholder IV data with real implied vol series (e.g., VIX, SPX ATM IV).
+# 2. Model real option structure: straddle or strangle with delta hedging.
+# 3. Add risk controls: margin limits, stop-outs, event filters.
+# 4. Implement account apportionment controls here or in main or something.
+# 5. Include auditing and compliance controls.

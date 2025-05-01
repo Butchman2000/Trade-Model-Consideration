@@ -1,0 +1,63 @@
+# Program: options_expiry_pinning
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /This identifies high open interest strikes options, and looks for near-expiration
+#    /price convergence, assuming that I can supply actual data at some point.
+#    /Some specific subscription will probably be required to get historicals.
+#    /An additional subscription will be needed to obtain live options data.
+
+import pandas as pd
+from datetime import datetime, timedelta
+
+# This is a conceptual scaffold; real implementation depends on your access to options OI data.
+# You’ll need to plug in actual OI and price data from a provider like ORATS, OptionMetrics, or scraped via brokerage API.
+
+# Example placeholder data structure:
+# oi_data = pd.DataFrame({
+#     'Date': [...],
+#     'Ticker': [...],
+#     'Strike': [...],
+#     'Open_Interest': [...],
+#     'Close_Price': [...],
+# })
+
+# --- Step 1: Identify Option Expiry Dates ---
+def get_third_fridays(start, end):
+    fridays = pd.date_range(start=start, end=end, freq='W-FRI')
+    return [d for d in fridays if 15 <= d.day <= 21]
+
+# --- Step 2: Find Top OI Strikes Near Expiry ---
+def identify_pinning_targets(oi_data, expiry_window):
+    signals = []
+    for expiry_date in expiry_window:
+        week_data = oi_data[oi_data['Date'] == expiry_date - timedelta(days=2)]  # 2 days before expiry
+        if week_data.empty: continue
+
+        grouped = week_data.groupby('Strike')['Open_Interest'].sum().reset_index()
+        top_strike = grouped.sort_values('Open_Interest', ascending=False).iloc[0]['Strike']
+
+        candidates = week_data[abs(week_data['Close_Price'] - top_strike) / top_strike <= 0.02]  # within 2%
+
+        for _, row in candidates.iterrows():
+            signals.append({
+                'Date': expiry_date,
+                'Ticker': row['Ticker'],
+                'Close_Price': row['Close_Price'],
+                'Pin_Strike': top_strike,
+                'Deviation': abs(row['Close_Price'] - top_strike) / top_strike
+            })
+    return pd.DataFrame(signals)
+
+# --- Example Usage ---
+# oi_data = pd.read_csv('sample_oi_dataset.csv')
+# expiry_dates = get_third_fridays('2022-01-01', '2024-01-01')
+# signals = identify_pinning_targets(oi_data, expiry_dates)
+# print(signals.head())
+
+# --- TODO List ---
+#
+# 1. ...
+# 2. Incorporate audit and compliance imports and controls.

@@ -1,0 +1,23 @@
+# Program: email_config
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#   /Centralized configuration for SMTP email alerts used by audit tools.
+
+EMAIL_SETTINGS = {
+    "recipient": "Bdander2000@msn.com",
+    "sender": "your-email@outlook.com",
+    "smtp_host": "smtp.office365.com",
+    "smtp_port": 587
+}
+
+# These should be set in your environment for security, not hardcoded:
+# - SMTP_SENDER_EMAIL
+# - SMTP_SENDER_PASSWORD
+
+# Example:
+# In your shell or virtual environment:
+# export SMTP_SENDER_EMAIL="your-email@outlook.com"
+# export SMTP_SENDER_PASSWORD="your-secure-password"

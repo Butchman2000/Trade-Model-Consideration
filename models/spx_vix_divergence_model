@@ -1,36 +1,50 @@
-# Program: spx_vix_divergence
+# Program: spx_vix_divergence_model
 # Author: Brian Anderson
 # Origin Date: 01May2025
-# Version: 1.0
+# Version: 1.1
 #
 # Purpose:
-#   /Capture alpha due to over-optimistic market volume during times of growing uncertainty.
-#   /...
+#   /Capture alpha due to over-optimistic market volume during times of data disparity.
+#   /Executes the SPX-VIX divergence strategy using daily SPY/VIX data,
+#   /applying slippage, exit conditions, and logging trades.
 #
 # Description:
 #
 # Helpers:
-##    /universe_filtering -- ticker selection, price corrections based on criteria like cost and market cap
-##    /...
+#    /volatility_helpers -- deals with situations of strong variability in vix behavior
 
 from datetime import datetime
 import importlib
 import pandas as pd
+
+from helpers.volatility_helpers import (
+    add_multiday_confirmation,
+    add_vix_term_structure,
+    add_stress_regime_flag
+)
+
 import yfinance as yf
 import numpy as np
-from helpers.universe_filtering import get_filtered_universe
-#from helpers. ...
+import matplotlib.pyplot as plt
 
 # --- SETTINGS ---
 START_DATE = "2019-01-01"
 END_DATE = "2025-01-01"
-
   
 TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "JPM", "CVNA", "PLTR"]  # example library
-LOOKBACK_MONTHS = 12
-SKIP_MONTHS = 1
-TOP_DECILE = 0.10
-BOTTOM_DECILE = 0.10
+
+MODEL = {
+    'slippage': 0.015, # 1.5% worst-case slippage for large accounts
+    'spy_threshold': 0.005, # minimum movement of 0.5% that day
+    'signal_vix_threshold': 0.05, # minimum movement of 5%
+    'exit_days': 5, # stay in the trade no longer than 5 days
+    'exit_drop': 0.02,
+    # --- some spx_vix_... model specific variables:
+    'vix_days': 3,
+    'confirm_vix_threshold': 0.10,
+    'threshold': 60,
+    'min_duration': 3,
+}
 
 # ---
 # Function: load_exclusions_by_year
@@ -88,18 +102,10 @@ def should_trade_on(date):
 
     return True
 
-# ---
-# Function: run_model
-# Description:
-#   /The main callable logic for executing a strategy.
-#   /This stub will eventually house signal generation logic.
-# ---
-
 def run_divergence_model():
-    # Model logic starts below:
-
-    # ---------------------------------
-
+    # Note to self: Executes the spx-vix divergence strategy.
+    # Returns the trande list and the results DataFrame.
+    #
     # Download SPY and VIX data (SPY as SPX proxy)
     spy = yf.download('SPY', start='2010-01-01', end='2024-01-01')
     vix = yf.download('^VIX', start='2010-01-01', end='2024-01-01')
@@ -108,18 +114,41 @@ def run_divergence_model():
     data = pd.DataFrame({
         'SPY_Close': spy['Close'],
         'SPY_Open': spy['Open'],
-        'VIX_Close': vix['Close']
+        'VIX_Close': vix['Close'],
+        'VIX': vix['Close']  # needed for helper function
     })
 
     # Daily % changes
     data['SPY_Change'] = data['SPY_Close'].pct_change()
     data['VIX_Change'] = data['VIX_Close'].pct_change()
 
-    # Find divergence signal days
-    data['Signal'] = (data['SPY_Change'] > 0.005) & (data['VIX_Change'] > 0.05)
+    # Add confirmation filter (multi-day VIX increase)
+    data = add_multiday_confirmation(
+        data,
+        vix_days=MODEL['vix_days'],
+        vix_threshold=MODEL['confirm_vix_threshold']
+    )
 
-    # Parameters
-    SLIPPAGE_RATE = 0.015  # 1.5% worst-case slippage for large accounts
+    # Download 3-month VIX index
+    vix_3m = yf.download('^VIX3M', start=START_DATE, end=END_DATE)['Close']
+
+    # Add term structure inversion
+    data = add_vix_term_structure(data, data['VIX'], vix_3m)
+
+    # Add stress regime flag
+    data = add_stress_regime_flag(data, data['VIX'], threshold=MODEL['threshold'], min_duration=MODEL['min_duration'])
+
+    # Find divergence signal days using configurable thresholds
+    data['Signal'] = (
+    (data['SPY_Change'] > MODEL['spy_threshold']) &
+    (data['VIX_Change'] > MODEL['signal_vix_threshold']) &
+    (data['VIX_Confirm']) &
+    (data['Term_Inversion']) &
+    (~data['Stress_Regime'])  # avoid signaling during deep stress periods
+    )
+
+    # Slippage pulled from config
+    SLIPPAGE_RATE = MODEL['slippage']
 
     # Iterate through signals
     trades = []
@@ -160,7 +189,7 @@ def run_divergence_model():
 
     compute_cagr_and_max_drawdown(signals)
  
-    return None
+    return trades, results
     
 
 # --- Performance Calculation Utilities ---
@@ -205,8 +234,6 @@ def compute_cagr_and_max_drawdown(signals):
 
     # --- Optional visualization, unsure if freelancer needs this
 
-    import matplotlib.pyplot as plt
-
     plt.figure(figsize=(10, 4))
     plt.plot(df.index, df['equity'], label='Equity Curve', linewidth=2)
     plt.title('SPX-VIX Divergence Strategy Equity Curve')
@@ -225,9 +252,8 @@ def compute_cagr_and_max_drawdown(signals):
 
 if __name__ == '__main__':
     run_divergence_model()
+    print(results.tail())  # provides our results
    
-    compute_cagr_and_max_drawdown(signals)
-
 '''
 # --- TODO List ---
 #

@@ -1,0 +1,237 @@
+# Program: spx_vix_divergence
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#   /Capture alpha due to over-optimistic market volume during times of growing uncertainty.
+#   /...
+#
+# Description:
+#
+# Helpers:
+##    /universe_filtering -- ticker selection, price corrections based on criteria like cost and market cap
+##    /...
+
+from datetime import datetime
+import importlib
+import pandas as pd
+import yfinance as yf
+import numpy as np
+from helpers.universe_filtering import get_filtered_universe
+#from helpers. ...
+
+# --- SETTINGS ---
+START_DATE = "2019-01-01"
+END_DATE = "2025-01-01"
+
+  
+TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "JPM", "CVNA", "PLTR"]  # example library
+LOOKBACK_MONTHS = 12
+SKIP_MONTHS = 1
+TOP_DECILE = 0.10
+BOTTOM_DECILE = 0.10
+
+# ---
+# Function: load_exclusions_by_year
+# Description:
+#   /Dynamically loads the exclusion module for a given year.
+#   /Assumes a file exists in exclusions/ named exclusions_<year>.py
+# Example:
+#   /year = 2024
+#   /exclusions = load_exclusions_by_year(2024)
+#   /exclusions.is_valid_trading_day(datetime(...))
+# ---
+
+def load_exclusions_by_year(year):
+    try:
+        module_name = f"exclusions.exclusions_{year}"
+        exclusions = importlib.import_module(module_name)
+        return exclusions
+    except ImportError as e:
+        print(f"[ERROR] Could not load exclusions for year {year}.")
+        print("[HINT] Ensure 'exclusions/exclusions_<year>.py' exists and is spelled correctly.")
+        return None  # More beginner-friendly fallback than raising error
+
+# ---
+# Function: should_trade_on
+# Description:
+#   /Applies all relevant exclusion filters to a date.
+#   /Returns False if any filter deems trading inappropriate.
+# ---
+
+def should_trade_on(date):
+    year = date.year
+    exclusions = load_exclusions_by_year(year)
+
+    if exclusions is None:
+        print("[WARNING] No exclusions module loaded — assuming it's okay to trade.")
+        return True
+
+    if not exclusions.is_valid_trading_day(date):
+        print(f"[BLOCKED] {date.date()} is not a valid trading day.")
+        return False
+
+    # These do not block trading, but serve as warnings
+    if exclusions.exit_time_on_fomc_day(date):
+        print("[NOTE] Early exit due to FOMC event.")
+    if exclusions.exit_time_on_half_day(date):
+        print("[NOTE] Half-day — trade cautiously or exit early.")
+    if exclusions.powell_speech_blackout(date):
+        print("[NOTE] Powell speech blackout window in effect.")
+    if exclusions.quad_witching_exit_time(date):
+        print("[NOTE] Quad witching day early close in effect.")
+    if exclusions.nfp_trading_restrictions(date):
+        print("[NOTE] NFP release — time restriction in effect.")
+    if exclusions.election_day_halt(date):
+        print("[NOTE] Election day halt — do not trade.")
+
+    return True
+
+# ---
+# Function: run_model
+# Description:
+#   /The main callable logic for executing a strategy.
+#   /This stub will eventually house signal generation logic.
+# ---
+
+def run_divergence_model():
+    # Model logic starts below:
+
+    # ---------------------------------
+
+    # Download SPY and VIX data (SPY as SPX proxy)
+    spy = yf.download('SPY', start='2010-01-01', end='2024-01-01')
+    vix = yf.download('^VIX', start='2010-01-01', end='2024-01-01')
+
+    # Use close and open prices
+    data = pd.DataFrame({
+        'SPY_Close': spy['Close'],
+        'SPY_Open': spy['Open'],
+        'VIX_Close': vix['Close']
+    })
+
+    # Daily % changes
+    data['SPY_Change'] = data['SPY_Close'].pct_change()
+    data['VIX_Change'] = data['VIX_Close'].pct_change()
+
+    # Find divergence signal days
+    data['Signal'] = (data['SPY_Change'] > 0.005) & (data['VIX_Change'] > 0.05)
+
+    # Parameters
+    SLIPPAGE_RATE = 0.015  # 1.5% worst-case slippage for large accounts
+
+    # Iterate through signals
+    trades = []
+    for date in data.index[data['Signal']]:
+        entry_index = data.index.get_loc(date) + 1
+        if entry_index >= len(data.index):
+            continue
+
+        entry_date = data.index[entry_index]
+        entry_price = data.loc[entry_date, 'SPY_Open'] * (1 - SLIPPAGE_RATE)  # short entry worse by 1.5%
+
+        # Look forward 5 days or until SPY drops 2%
+        for i in range(1, 6):
+            if entry_index + i >= len(data):
+                break
+            future_date = data.index[entry_index + i]
+            future_price = data.loc[future_date, 'SPY_Close'] * (1 + SLIPPAGE_RATE)  # exit worse by 1.5%
+            drop = (entry_price - future_price) / entry_price
+
+            if drop >= 0.02 or i == 5:
+                trades.append({
+                    'Entry': entry_date,
+                    'Exit': future_date,
+                    'Entry_Price': entry_price,
+                    'Exit_Price': future_price,
+                    'Return': (entry_price - future_price) / entry_price
+                })
+                break
+
+    # Results presentation
+    results = pd.DataFrame(trades)
+    signals = []
+    for trade in trades:
+        signals.append({
+        'date': trade['Entry'],
+        'net_return': trade['Return']
+        })
+
+    compute_cagr_and_max_drawdown(signals)
+ 
+    return None
+    
+
+# --- Performance Calculation Utilities ---
+
+def compute_cagr_and_max_drawdown(signals):
+    if not signals:
+        print("[INFO] No signals to evaluate.")
+        return
+
+    df = pd.DataFrame(signals)
+    df['net_return'] = df['net_return'].astype(float)
+    df['Date'] = pd.to_datetime(df['date'])
+    df.set_index('Date', inplace=True)
+    df.sort_index(inplace=True)
+    df['equity'] = (1 + df['net_return']).cumprod()
+
+    # CAGR calculation
+    total_years = (df.index[-1] - df.index[0]).days / 365.25
+    cagr = df['equity'].iloc[-1] ** (1 / total_years) - 1
+
+    # Max drawdown calculation
+    rolling_max = df['equity'].cummax()
+    drawdown = df['equity'] / rolling_max - 1
+    max_drawdown = drawdown.min()
+
+    print(f"\nPerformance Summary:")
+    print(df.head())
+    print(f"CAGR: {cagr:.2%}")
+    print(f"Max Drawdown: {max_drawdown:.2%}")
+  
+    # --- Average return, win rate, and average duration calculation
+    avg_return = df['net_return'].mean()
+    win_rate = (df['net_return'] > 0).mean()
+    avg_duration = (df.index.to_series().diff().fillna(pd.Timedelta(days=0)).dt.days).mean()
+
+    print(f"Average Trade Return: {avg_return:.2%}")
+    print(f"Win Rate: {win_rate:.2%}")
+    print(f"Avg Trade Spacing: {avg_duration:.1f} days between signals")
+    
+    # --- Provide results 
+    print(f"[INFO] Evaluated {len(df)} signals between {df.index[0].date()} and {df.index[-1].date()}")
+
+    # --- Optional visualization, unsure if freelancer needs this
+
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(df.index, df['equity'], label='Equity Curve', linewidth=2)
+    plt.title('SPX-VIX Divergence Strategy Equity Curve')
+    plt.xlabel('Date')
+    plt.ylabel('Equity')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.legend()
+    plt.show()
+
+# --- Script entry point for manual testing --
+#
+# (insert script here)
+#
+# ---
+
+if __name__ == '__main__':
+    run_divergence_model()
+   
+    compute_cagr_and_max_drawdown(signals)
+
+'''
+# --- TODO List ---
+#
+# 1. Perhaps some kind of news sensitive organic correction(s), such as in response to
+#    the fear-and-greed index.  Or something similar ot what is suggested
+#    in the TODO List of 12-1 Momentum Model.
+'''

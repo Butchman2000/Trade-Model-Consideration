@@ -1,20 +1,38 @@
 # Program: twelve_one_momentum_model.py
 # Author: Brian Anderson
-# Origin Date: 30April2025
-# Version: 1.0
+# Origin Date: 01May2025
+# Version: 1.1
 # 
 # Purpose:
-#   /Trading model connected to exclusion logic (support for 2020–2024)
+#   /Trading model connected to exclusion logic (support for 2019–2024)
+#
+# Description:
+#   /The 12-1 momentum model ranks stocks based on their performance over the past 12 months, excluding the
+#   /most recent month to avoid short-term reversal noise.
+#   /It goes long on the top 10% of performers and short on the bottom 10%, forming a monthly long/short
+#   /portfolio.
+#   /It then holds this position for one month and calculates the net return before repeating the process
+#   /at the next rebalance date.
+#
+# Helpers:
+#    /whipsaw_helper -- analyzes market volatility considerations and movements
+#    /universe_filtering -- ticker selection, price corrections based on criteria like cost and market cap
+#    /volatility_momentum_adjustments -- (yet to be finalized, yet to be implemented; hold off for now)
 
 from datetime import datetime
 import importlib
 import pandas as pd
 import yfinance as yf
 import numpy as np
+from vix_whipsaw_helper import vix_whipsaw_filter
+from helpers.universe_filtering import get_filtered_universe
+
 
 # --- SETTINGS ---
 START_DATE = "2019-01-01"
-END_DATE = "2024-01-01"
+END_DATE = "2025-01-01"
+
+  
 TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "JPM", "CVNA", "PLTR"]  # example library
 LOOKBACK_MONTHS = 12
 SKIP_MONTHS = 1
@@ -84,22 +102,68 @@ def should_trade_on(date):
 #   /This stub will eventually house signal generation logic.
 # ---
 
-def run_model(data, date):
+def run_model(data, date, vix_data, vix_state):
     if not should_trade_on(date):
         return None
 
-    # Model logic starts below:
-    
-  
-    # --- Data download ---
-    # TODO: Determine source of download data.
-    data = yf.download(TICKERS, start=START_DATE, end=date.strftime("%Y-%m-%d"), interval='1mo', auto_adjust=True)['Adj Close']
-    data = data.dropna(how="any", axis=1)
+    decision, vix_state = vix_whipsaw_filter(date, vix_data, vix_state)
 
+    if decision == 'red_light_active':
+        # Red light condition triggered:
+        # VIX dropped > 7%, rebounded ≥ 4%, so now we are suppressing activity
+        print(f"[RED] VIX red light at {date.date()} — cutting longs by 50% and halting new shorts.")
+
+        # Re-rank the scores in case we need to rebuild long/short lists from scratch:
+        
+    	# First, get the scores for the current date only
+    	score = momentum_scores.loc[date].dropna()
+	
+    	# Second, rank them from 0 to 1
+        score_ranked = score.rank(pct=True)
+
+        # Third, select top decile (10%), sort descending-fashion to find strongest long candidates
+        raw_longs = score_ranked[score_ranked >= (1 - TOP_DECILE)].sort_values(ascending=False)
+
+        # Fourth, reduce long exposure by taking only the top half of those top performers
+        # Put only half of the typical long candidates into the longs array
+    	longs = raw_longs.head(int(len(raw_longs) / 2)).index
+
+        # Disable new short positions entirely
+        shorts = []
+
+    elif decision == 'cooldown_active':
+        # Yellow cooldown: triggered by VIX > 30, then drop > 8%, then rebound ≥ 4.5%
+        print(f"[YELLOW] VIX cooldown at {date.date()} — limiting shorts to 70% of normal.")
+
+        # Under cooldown, we need to re-rank scores and rebuild shorts
+        
+	#First, get the scores for the current date only
+	score = momentum_scores.loc[date].dropna()
+
+	#Second, rank them from 0 to 1
+        score_ranked = score.rank(pct=True)
+
+        # Third, select bottom decile (10%), sort ascending-fashion for weakest performers
+        raw_shorts = score_ranked[score_ranked <= BOTTOM_DECILE].sort_values()
+
+        # Fourth, limit short positions to 70% of the eligible group
+        max_shorts = max(1, int(0.70 * len(raw_shorts)))
+        shorts = raw_shorts.head(max_shorts).index
+
+        # Longs proceed as normal -- we already calculated them earlier above
+
+    elif decision in ('cooling_triggered', 'revert_to_strict'):
+        # We're watching VIX closely due to a sharp drop; no changes to trade execution yet
+        print(f"[YELLOW] VIX watch mode ({decision}) active on {date.date()} — no trade adjustment.")
+
+      
+    # Ensure enough data for lookback, skip, and next-month return
     if len(data) < (LOOKBACK_MONTHS + SKIP_MONTHS + 2):
         print("[INFO] Not enough data to calculate momentum scores.")
         return None
 
+    # Model logic starts below:
+    
     # --- Calculate the monthly returns ---
     monthly_returns = data.pct_change()
     momentum_scores = data.pct_change(periods=LOOKBACK_MONTHS + SKIP_MONTHS).shift(SKIP_MONTHS)
@@ -119,6 +183,33 @@ def run_model(data, date):
     longs = score_ranked[score_ranked >= (1 - TOP_DECILE)].index
     shorts = score_ranked[score_ranked <= BOTTOM_DECILE].index
 
+    vix_value = vix_data.loc[date]
+    
+    if vix_value >36:  #When volatility climbs, go long less than before
+        print(f"[INFO] VIX at {vix_value:1f} on {date.date()} - cutting back on long trades.")
+
+        # Calculate raw ranked longs and shorts
+        raw_longs = score_ranked[score_ranked >= (1 - TOP_DECILE)].sort_values(ascending=False)
+        shorts = score_ranked[score_ranked <= BOTTOM_DECILE].index
+
+        # Step 1: Get value of max 20% of tickers
+        limit_20pct = max(1, int(0.20 * len(TICKERS)))
+
+        # Step 2: Get limit value of max 30% of short count
+        limit_30pct_shorts = max(1, int(round(0.30 * len(shorts))))
+
+        # Step 3: Choose the lesser of the two
+        max_longs = min(limit_20pct, limit_30pct_shorts)
+
+        # Select top-ranked longs within that cap
+        longs = raw_longs.head(max_longs).index
+    # return None  (unsure if I need these here)
+
+    if vix_value > 45:  # When volatility is higher, do not go long any further
+        print(f"[INFO] VIX at {vix_value:.1f} on {date.date()} — skipping long trades.")
+        longs = []
+    # return None  (unsure if I need these here)
+
     try:
         next_month = monthly_returns.index[monthly_returns.index.get_loc(date)+1]
     except IndexError:
@@ -128,8 +219,6 @@ def run_model(data, date):
     r_long = monthly_returns.loc[next_month, longs].mean()
     r_short = monthly_returns.loc[next_month, shorts].mean()
     net_return = r_long - r_short
-
-    portfolio_returns.append({"Date": next_month, "Long": r_long, "Short": r_short, "Net":net_return})
 
     signal = {
         'date': date.strftime("%Y-%m-%d"),
@@ -143,9 +232,7 @@ def run_model(data, date):
     print(f"[INFO] Signal generated on {date.date()}: {signal}")
     return signal
 
-# ---
-# Performance Calculation Utilities
-# ---
+# --- Performance Calculation Utilities ---
 
 def compute_cagr_and_max_drawdown(signals):
     if not signals:
@@ -159,33 +246,50 @@ def compute_cagr_and_max_drawdown(signals):
     df.sort_index(inplace=True)
     df['equity'] = (1 + df['net_return']).cumprod()
 
-    # CAGR
+    # CAGR calculation
     total_years = (df.index[-1] - df.index[0]).days / 365.25
     cagr = df['equity'].iloc[-1] ** (1 / total_years) - 1
 
-    # Max Drawdown
+    # Max drawdown calculation
     rolling_max = df['equity'].cummax()
     drawdown = df['equity'] / rolling_max - 1
     max_drawdown = drawdown.min()
 
-    print(f"
-Performance Summary:")
-    print(results.head())
+    print(f"\nPerformance Summary:")
+    print(df.head())
     print(f"CAGR: {cagr:.2%}")
     print(f"Max Drawdown: {max_drawdown:.2%}")
-    
-# ---
-# Script entry point for manual testing
+    print(f"[INFO] Evaluated {len(df)} signals between {df.index[0].date()} and {df.index[-1].date()}")
+
+# --- Script entry point for manual testing --
+#
+# (insert script here)
+#
 # ---
 
 if __name__ == '__main__':
     # Run test across 2020–2024 for March 20th
     signals = []
-    for y in range(2020, 2025):
+    for y in range(2019, 2025):
         test_date = datetime(y, 3, 20)
-        print(f"
-=== Testing {test_date.date()} ===")
-        signal = run_model(data=None, date=test_date)
+        print(f"\n=== Testing {test_date.date()} ===")
+      
+        # Actively generate the stock tickers for the test date
+        TICKERS = get_filtered_universe(test_date)
+
+        if not TICKERS:
+            print(f"[SKIP] No tickers passed universe filter for {test_date.date()}")
+            continue
+      
+        #Preload all data a single time, for efficiency
+        full_data = yf.download(TICKERS, start=START_DATE, end=END_DATE, interval='1mo', auto_adjust=True)['Adj Close']
+        full_data = full_data.dropna(how="any", axis=1)
+        vix_data = yf.download("^VIX", start=START_DATE, end=END_DATE, interval='1mo', auto_adjust=True)['Adj Close']
+        # *test_date = datetime(y, 3, 20)
+        # *print(f"\n=== Testing {test_date.date()} ===")
+
+        vix_state = {}
+        signal = run_model(data=full_data, date=test_date, vix_data=vix_data, vix_state=vix_state)
         if signal:
             print(f"[RUN] Signal: {signal}")
             signals.append(signal)
@@ -193,3 +297,20 @@ if __name__ == '__main__':
             print("[SKIP] Trade blocked by exclusion logic.")
 
     compute_cagr_and_max_drawdown(signals)
+
+'''
+# --- TODO List ---
+#
+# 1. Instructions for rating of longs and shorts could benefit from being paired against a ratio
+#    of the growth or fall of the equity, against the index and/or against others in its genre.
+#    E.g. Palantir has been climbing like a rocket for almost a year, but is overinflated, making it
+#    unstable beyond several months.  A rating reduction may be justified.  Perhaps a multi-month,
+#    multi-quarter, multi-year binning, and algo comparison of bin behaviors versus more stable
+#    growing equities is of value--a separate utility program for the future to be sure:
+
+    # --- Layered Alpha Idea: Adjusted Momentum Scoring ---
+
+    ... (logic of this TODO idea is captured in helper/volatility_momentum_adjustments)
+        (Current plan is to solidify backtesting of current model first)
+        (Incorporation of additional ideas in the helper file to be considered at a later time)
+'''

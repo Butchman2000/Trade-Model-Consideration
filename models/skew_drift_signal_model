@@ -1,0 +1,63 @@
+# Program: skew_drift_signal_model
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Gain value from the skew drift signal, which uses steep changes in implied volatility skew
+#    /(difference in OTM put and call IVs), to detect potential downside risk in equity markets.
+#    /Signal triggers when skew exceeds a historical percentile threshold (e.g., 90th).
+#
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# --- Placeholder: Synthetic skew data ---
+# Format: Date, Put_IV, Call_IV
+sample_data = [
+    {"Date": "2023-01-01", "Put_IV": 0.28, "Call_IV": 0.21},
+    {"Date": "2023-01-02", "Put_IV": 0.30, "Call_IV": 0.22},
+    {"Date": "2023-01-03", "Put_IV": 0.35, "Call_IV": 0.23},
+    {"Date": "2023-01-04", "Put_IV": 0.29, "Call_IV": 0.22},
+    {"Date": "2023-01-05", "Put_IV": 0.33, "Call_IV": 0.21},
+    {"Date": "2023-01-06", "Put_IV": 0.34, "Call_IV": 0.22},
+    {"Date": "2023-01-07", "Put_IV": 0.36, "Call_IV": 0.23},
+    {"Date": "2023-01-08", "Put_IV": 0.31, "Call_IV": 0.22},
+    {"Date": "2023-01-09", "Put_IV": 0.38, "Call_IV": 0.23},
+    {"Date": "2023-01-10", "Put_IV": 0.40, "Call_IV": 0.24},
+]
+df = pd.DataFrame(sample_data)
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index('Date', inplace=True)
+
+# --- Calculate daily skew (Put IV - Call IV) ---
+df['Skew'] = df['Put_IV'] - df['Call_IV']
+
+# --- Determine skew percentile threshold ---
+PERCENTILE = 90
+threshold = np.percentile(df['Skew'], PERCENTILE)
+
+# --- Identify signal dates ---
+df['Signal'] = df['Skew'] > threshold
+
+# --- Simulate placeholder return on signal days ---
+# (e.g., long VIX call or SPY put)
+np.random.seed(0)
+df['Trade_Return'] = np.where(df['Signal'], np.random.normal(0.05, 0.02, len(df)), 0.0)
+df['Cumulative'] = (1 + df['Trade_Return']).cumprod()
+
+# --- Output ---
+print("\nSkew Drift Signal Backtest Results")
+print("----------------------------------")
+print(df[['Skew', 'Signal', 'Trade_Return']])
+print(f"\nSignal Days: {df['Signal'].sum()}")
+print(f"Cumulative Return: {df['Cumulative'].iloc[-1]:.2f}")
+print(f"Mean Return on Signal Days: {df[df['Signal']]['Trade_Return'].mean():.2%}")
+
+# TODO:
+# 1. Replace synthetic IV data with true 25-delta call/put IVs from ORATS, IvyDB, or OptionMetrics.
+# 2. Add confirmation filter (e.g., VIX rising or realized vol increasing).
+# 3. Implement spread trades (e.g., VIX calls, SPY puts) based on signal days.
+# 4. Implement account apportionment controls and notifications.
+# 5. Incorporate auditing and compliance controls.

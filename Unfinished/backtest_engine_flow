@@ -1,0 +1,166 @@
+# Program: backtest_engine_flow
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Full Compact Backtest Engine Skeleton, updated with EUR/USD handling + trailing stops
+#    /+ Dynamic Sizing
+
+import pandas as pd
+
+# Load my historical data (example for Tesla and EUR/USD)
+tesla_data = pd.read_csv('tesla_prices.csv')
+eurusd_data = pd.read_csv('eurusd_prices.csv')
+
+# Placeholder signal logic
+def tesla_condor_signal(price_data, volatility_data):
+    recent_drop_pct = (price_data.iloc[-1] - price_data.iloc[-5]) / price_data.iloc[-5] * 100
+    iv_rank = volatility_data.iloc[-1]
+    return recent_drop_pct <= -20 and iv_rank >= 70
+
+def eurusd_short_signal(price_data, rsi_data):
+    ema9 = price_data.ewm(span=9).mean()
+    ema20 = price_data.ewm(span=20).mean()
+    latest_ema_cross = ema9.iloc[-1] < ema20.iloc[-1]
+    rsi_confirm = rsi_data.iloc[-1] < 45
+    return latest_ema_cross and rsi_confirm
+
+# Simple account tracker
+account = {
+    'balance': 100000,
+    'positions': [],
+    'trade_log': []
+}
+
+RISK_PER_TRADE = 0.01  # Risk 1% of account per trade
+TRAILING_STOP_PERCENT = 0.05  # 5% trailing stop for Tesla
+
+# Example: backtest Tesla and EUR/USD data
+for i in range(20, len(tesla_data)):
+    # Tesla handling
+    price_slice = tesla_data['close'].iloc[i-20:i]
+    iv_slice = tesla_data['iv_rank'].iloc[i-20:i]
+    current_price = tesla_data['close'].iloc[i]
+
+    if tesla_condor_signal(price_slice, iv_slice):
+        size = account['balance'] * RISK_PER_TRADE / (current_price * TRAILING_STOP_PERCENT)
+        account['positions'].append({'asset': 'TSLA', 'type': 'condor', 'entry': current_price, 'entry_idx': i, 'size': size, 'highest_price': current_price})
+
+    # EUR/USD handling
+    price_slice_fx = eurusd_data['close'].iloc[i-20:i]
+    rsi_slice_fx = eurusd_data['rsi'].iloc[i-20:i]
+    current_price_fx = eurusd_data['close'].iloc[i]
+
+    if eurusd_short_signal(price_slice_fx, rsi_slice_fx):
+        size_fx = account['balance'] * RISK_PER_TRADE / 0.0010  # Assume 10 pips stop
+        account['positions'].append({'asset': 'EURUSD', 'type': 'short', 'entry': current_price_fx, 'entry_idx': i, 'size': size_fx})
+
+    # Manage open positions
+    new_positions = []
+    for pos in account['positions']:
+        if pos['asset'] == 'TSLA':
+            current = tesla_data['close'].iloc[i]
+            pos['highest_price'] = max(pos['highest_price'], current)
+            trail_stop_price = pos['highest_price'] * (1 - TRAILING_STOP_PERCENT)
+            
+            if current <= trail_stop_price:
+                pnl = (current - pos['entry']) * pos['size']
+                account['balance'] += pnl
+                account['trade_log'].append({'asset': 'TSLA', 'entry_idx': pos['entry_idx'], 'exit_idx': i, 'pnl': pnl})
+            else:
+                new_positions.append(pos)
+
+        elif pos['asset'] == 'EURUSD':
+            current_fx = eurusd_data['close'].iloc[i]
+            price_change = (current_fx - pos['entry']) * 10000  # pips
+            
+            if price_change >= 10 or price_change <= -10:
+                pnl = price_change * pos['size'] * 0.0001
+                account['balance'] += pnl
+                account['trade_log'].append({'asset': 'EURUSD', 'entry_idx': pos['entry_idx'], 'exit_idx': i, 'pnl': pnl})
+            else:
+                new_positions.append(pos)
+
+    account['positions'] = new_positions
+
+# End of backtest: print results
+pnl_list = [trade['pnl'] for trade in account['trade_log']]
+if pnl_list:
+    print(f"Total P&L: {sum(pnl_list):.2f}")
+    print(f"Max Drawdown: {min(pnl_list):.2f}")
+    print(f"Number of Trades: {len(pnl_list)}")
+else:
+    print("No trades triggered.")
+
+# Save trade log to CSV
+pd.DataFrame(account['trade_log']).to_csv('trade_log.csv', index=False)
+
+# Notes:
+# 1. Future Live Feed Idea: Integrate Benzinga API to replace csv data loading with live price feeds for real-time signal testing.
+
+# 2. Visualization Idea: After backtest, use matplotlib to plot equity curve like:
+#    import matplotlib.pyplot as plt
+#    equity_curve = pd.Series([initial_balance] + list(account['balance_history']))
+#    equity_curve.plot(title='Equity Curve Over Time')
+#    plt.show()
+
+# 3. Secondary EMA Cross Detection Idea:
+#    - Track number of EMA cross events in recent window.
+#    - Treat first EMA9/EMA20 cross normally.
+#    - If a second cross happens shortly after:
+#      - Reduce trade size.
+#      - Tighten stop-loss.
+#      - Use faster profit targets.
+#    - Optional confirmation: Second cross only valid if RSI still under threshold (e.g., <45).
+#    - Challenge: Defining "shortly after" and avoiding missing real secondary momentum breaks.
+
+# Concept:
+# - Track number of EMA crosses within a session/window.
+# - IF first cross (fresh trend start):
+#     - Treat signal normally.
+# - IF second cross (recent history had one already):
+#     - Adjust:
+#         - Smaller position size
+#         - Faster exit (smaller profit targets)
+#         - Tighter stop loss
+# - Optional:
+#     - Only take second cross if volatility remains elevated.
+#     - Require RSI to still confirm weakness (e.g., stay <45).
+
+# Practical Use:
+# - Helps avoid overtrading choppy ranges after a trend has mostly played out.
+# - Protects against death-by-a-thousand-cuts scenarios.
+
+# Challenges:
+# - Defining \"how much time\" or \"how many bars\" between first and second crosses.
+# - Not missing big moves if the second cross *is* legit during high momentum trends.
+
+
+# 4. Channel/Flag Detection Idea: Add optional module to detect narrow range consolidation (channels/flags/triangles) based on:
+#    - Tight High-Low range over lookback window (e.g., 50 bars)
+#    - Multiple touches of top and bottom range
+#    - Optional breakout condition if price exceeds range by more than 1 ATR
+#    - Use detected channels to trigger bounce trades or breakout trades.# Concept:
+
+# Concept:
+# - Define a lookback window (e.g., 50 bars)
+# - Calculate:
+#   - Highest high and lowest low
+#   - Width of range (high - low)
+# - IF range width is narrow (low compared to ATR or recent volatility)
+# - AND price repeatedly bounces between the top 20% and bottom 20% of the range
+# - THEN tag this zone as a \"channel\" candidate
+# - Optional: Look for contracting highs/lows to define a \"flag\" or \"triangle\" shape.
+# Practical Use:
+# - During channel detection:
+#   - Buy near bottom, sell near top
+#   - Use tight stops if breakout outside channel range (measured by ATR breakout threshold)
+# Challenges:
+# - Handling tilted channels (rising/falling, not purely sideways)
+# - Handling fakeouts and random volatility bursts
+# - Deciding when a channel is \"broken\" (not too early, not too late)
+# Expansion:
+# - Combine with volume spikes to detect valid breakout attempts
+# - Overlay moving averages or Bollinger Bands for visual confirmation
+

@@ -43,8 +43,18 @@ df['Signal'] = df['Skew'] > threshold
 
 # --- Simulate placeholder return on signal days ---
 # (e.g., long VIX call or SPY put)
+from utils.exclusion_tools import should_trade_on
+
 np.random.seed(0)
-df['Trade_Return'] = np.where(df['Signal'], np.random.normal(0.05, 0.02, len(df)), 0.0)
+df['Trade_Return'] = 0.0
+
+for date in df.index:
+    if df.loc[date, 'Signal']:
+        if not should_trade_on(date):
+            print(f"[SKIP] Excluded skew signal on {date.date()}")
+            continue
+        df.loc[date, 'Trade_Return'] = np.random.normal(0.05, 0.02)
+
 df['Cumulative'] = (1 + df['Trade_Return']).cumprod()
 
 # --- Output ---

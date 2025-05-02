@@ -1,0 +1,93 @@
+--- NOTES ONLY -- DO NOT USE FOR CODING ---
+
+%% Robust ML/AI Stock Evaluation System - Template
+% Structure for real-time or batch-driven market evaluation with AI
+
+%% --- 1. IMPORTS ---
+% MATLAB-style imports and paths
+addpath('helpers');  % Folder with helper utilities
+addpath('models');   % Folder with ML models
+
+% If using packages:
+import matlab.io.*
+import statistics.*
+
+%% --- 2. GLOBALS & CONFIGURATION ---
+global CONFIDENCE_THRESHOLD MAX_ALERTS MARKET_PHASES MODULES;
+
+CONFIDENCE_THRESHOLD = 0.85;
+MAX_ALERTS = 20;
+MARKET_PHASES = {"PreMarket4to7", "PreMarketPost7", "MarketOpen", "MarketClose"};
+MODULES = {"NeuralNetwork", "AIModel", "Notifier"};
+
+%% --- 3. DEFAULT VARIABLES ---
+priceData = zeros(1, 100);         % Placeholder for price history
+volumeData = ones(1, 100) * 1000;  % Placeholder for volume
+
+%% --- 4. MODEL / HELPER IMPORTS ---
+% Load pretrained models or initialize new ones
+load('trainedModel.mat');  % Example: MATLAB saved net
+% net = trainedNeuralNetwork();
+
+%% --- 5. FUNCTION DEFINITIONS ---
+
+function normData = normalizeData(data)
+    normData = (data - mean(data)) / std(data);
+end
+
+function signal = runNeuralNetworkPhase(data)
+    % Simulated model logic
+    signal = rand() > 0.5;
+end
+
+function results = runAIModelPhase(data)
+    % Advanced decision model
+    results = struct('score', rand(), 'decision', rand() > 0.6);
+end
+
+function notifyUser(content)
+    fprintf("[NOTIFY] %s\n", content);
+end
+
+function logTrainingExample(inputs, label)
+    % Collects training examples
+    fprintf("Logged training sample. Label: %d\n", label);
+end
+
+%% --- 6. MAIN EXECUTION LOOP ---
+
+while true
+    fprintf("--- Market Evaluation Cycle ---\n");
+
+    % 1. Fetch simulated or real market data
+    data = struct('price', priceData, 'volume', volumeData);
+
+    % 2. Loop through each market phase
+    for t = 1:length(MARKET_PHASES)
+        fprintf("\nPhase: %s\n", MARKET_PHASES{t});
+
+        % 3. Execute each module for this phase
+        for m = 1:length(MODULES)
+            taskName = strcat(MODULES{m}, "_", MARKET_PHASES{t});
+            fprintf("Running module: %s\n", taskName);
+
+            % Simulated logic
+            if strcmp(MODULES{m}, "NeuralNetwork")
+                sig = runNeuralNetworkPhase(data.price);
+                fprintf("Signal: %d\n", sig);
+
+            elseif strcmp(MODULES{m}, "AIModel")
+                res = runAIModelPhase(data);
+                fprintf("AI Decision: %d | Score: %.2f\n", res.decision, res.score);
+
+            elseif strcmp(MODULES{m}, "Notifier")
+                if res.score > CONFIDENCE_THRESHOLD
+                    notifyUser("Opportunity detected with high confidence.");
+                end
+            end
+        end
+    end
+
+    % Optional: sleep or pause between cycles
+    pause(60);  % Wait for 60 seconds before next check
+end

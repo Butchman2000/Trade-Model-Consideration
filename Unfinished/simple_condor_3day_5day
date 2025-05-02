@@ -1,0 +1,249 @@
+# Simple Condor Simulator - 3DTE / 5DTE Version
+#
+# Program: simple_condor_3day_5day
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /A tail chasing program, for iterative SPY condor purchases, and feeding on the
+#    /profit from the previously near-expiry condors.  Adjustments are made to spread and
+#    /leg width of the condors, based on varying conditions.
+
+import pandas as pd
+import numpy as np
+from dataclasses import dataclass
+
+# --- Configuration ---
+# Config dataclass holds all tunable parameters for easy management and adjustment.
+@dataclass
+class Config:
+    DTE_CHOICES: list = (3, 5)  # Alternating Days to Expiration choices
+    TARGET_CREDIT: float = 1.00  # Target premium collected per condor
+    MAX_LOSS: float = 2.00       # Maximum allowed loss per condor breach
+    BASE_WIDTH: int = 6          # Base width for condor wings
+    IV_DROP_THRESHOLD: float = 2.0  # Volatility drop threshold for feeding exits
+    BASE_FEED_CAPTURE: float = 0.30  # % credit capture on standard feeding
+    AGGRESSIVE_FEED_CAPTURE: float = 0.40  # % credit capture when many condors open
+    MULTI_CONDOR_THRESHOLD: int = 2   # Threshold to trigger aggressive feeding
+    MIN_VOL_TO_TRADE: float = 12.5     # Minimum volatility to open a condor
+    VOLATILITY_SWITCH_THRESHOLD: float = 40.0  # Volatility level to switch strategies
+    VOLATILITY_SHUTDOWN_THRESHOLD: float = 50.0  # Volatility level to shutdown condor sales
+
+config = Config()
+
+# --- Volatility Check for Explosive Markets ---
+if current_vol > config.VOLATILITY_SHUTDOWN_THRESHOLD:  # stock movement likelihood too high
+  print(f"High Volatility Detected on Day {day}, Switching Strategies.")
+    # Skip further processing for condor creation during high volatility period
+    continue
+  
+# Calendar event days where special handling occurs
+fed_talk_days = [20, 50, 80]
+cpi_release_days = [30, 70]
+
+# --- Data Generation (Placeholder) ---
+# Simulated prices and volatility data
+prices = pd.Series([100 + i*0.5 for i in range(100)])
+volatility = pd.Series(np.random.uniform(10, 25, size=100))
+put_premiums = pd.Series(np.random.uniform(0.5, 1.5, size=100))
+call_premiums = pd.Series(np.random.uniform(0.5, 1.5, size=100))
+
+# --- Condor Structure ---
+# Condor dataclass represents a single opened condor contract
+@dataclass
+class Condor:
+    open_day: int
+    DTE: int
+    lower_put: float
+    lower_call: float
+    upper_put: float
+    upper_call: float
+    credit: float
+
+# --- Functions ---
+# Determine condor width based on current volatility level
+
+def determine_strike_width(vol, base_width=6):
+    if vol > 20:
+        return 4
+    elif vol > 15:
+        return 5
+    else:
+        return base_width
+
+# Calculate distance between strikes based on premium sums
+
+def condor_strike_distance(put_premium, call_premium):
+    return put_premium + call_premium
+
+# Check if today is a special event day (Fed talk or CPI)
+
+def is_special_day(day):
+    return day in fed_talk_days or (day + 1) in cpi_release_days
+
+# Create a new condor using current market conditions
+
+def create_condor(day, price, current_vol):
+    dte = config.DTE_CHOICES[day % 2]
+    width = determine_strike_width(current_vol, config.BASE_WIDTH)
+    strike_gap = condor_strike_distance(put_premiums.iloc[day], call_premiums.iloc[day])
+
+    return Condor(
+        open_day=day,
+        DTE=dte,
+        lower_put=price - (width + strike_gap),
+        lower_call=price - strike_gap,
+        upper_put=price + strike_gap,
+        upper_call=price + (width + strike_gap),
+        credit=config.TARGET_CREDIT
+    )
+
+# Manage an existing condor: decrement DTE, decide whether to close early or at expiry
+
+def manage_condor(condor, price, current_vol, entry_vol, close_condors_today, is_multi_condor):
+    condor.DTE -= 1
+    iv_drop = entry_vol - current_vol
+
+    feed_capture_rate = config.BASE_FEED_CAPTURE
+    if is_multi_condor:
+        feed_capture_rate = config.AGGRESSIVE_FEED_CAPTURE
+
+    close_reason = None
+    if (iv_drop >= config.IV_DROP_THRESHOLD) and not close_condors_today:
+        pnl = condor.credit * feed_capture_rate
+        close_reason = 'feed_exit'
+    elif condor.DTE <= 0 or close_condors_today:
+        if price < condor.lower_put or price > condor.upper_call:
+            pnl = -config.MAX_LOSS
+        else:
+            pnl = condor.credit
+        close_reason = 'expiry_or_forced_exit'
+    else:
+        pnl = None
+
+    return pnl, close_reason
+
+# --- Simulation ---
+open_condors = []
+trade_log = []
+
+# Main simulation loop: simulate day-by-day trading
+for day, price in enumerate(prices):
+    day_of_week = day % 7  # 0=Monday, 6=Sunday (simulate weekly calendar)
+    if day_of_week in (5, 6):
+        continue  # Skip Saturdays and Sundays (no trading)
+
+    close_condors_today = is_special_day(day)
+    current_vol = volatility.iloc[day]
+
+    new_open_condors = []
+    for condor in open_condors:
+        entry_vol = volatility.iloc[condor.open_day]
+        pnl, close_reason = manage_condor(condor, price, current_vol, entry_vol, close_condors_today, len(open_condors) >= config.MULTI_CONDOR_THRESHOLD)
+
+        if pnl is not None:
+            trade_log.append({'open_day': condor.open_day, 'close_day': day, 'pnl': pnl, 'close_reason': close_reason})
+        else:
+            new_open_condors.append(condor)
+    open_condors = new_open_condors
+
+    if close_condors_today:
+        continue
+
+    if current_vol >= config.MIN_VOL_TO_TRADE:
+        condor = create_condor(day, price, current_vol)
+        open_condors.append(condor)
+
+# --- Results ---
+results = pd.DataFrame(trade_log)
+print(results)
+print(f"Total P&L: {results['pnl'].sum():.2f}")
+
+# Additional Post-Analysis
+num_trades = len(results)
+winning_trades = results[results['pnl'] > 0]
+win_rate = (len(winning_trades) / num_trades) * 100 if num_trades else 0
+average_pnl = results['pnl'].mean() if num_trades else 0
+
+print(f"Number of Trades: {num_trades}")
+print(f"Win Rate: {win_rate:.2f}%")
+print(f"Average P&L per Trade: {average_pnl:.2f}")
+
+# Notes:
+# During extreme volatility events (e.g., VIX > 60%), condors can offer absurd risk-reward setups.
+# Under these conditions:
+# - Break standard decay models (Scholes assumptions fail).
+# - Increase gamma risk heavily (sharp moves dominate).
+# - Require emergency defensive rules.
+# - Potential future module: Emergency IV Mode.
+#     - If daily volatility exceeds 60%, no new condors allowed.
+#     - Existing condors managed with aggressive early exits (e.g., 20% capture target instead of 30-40%).
+
+# Additional Operational Rule:
+# - Do not open condors if SPY (or underlying) implied volatility is below 12.5%.
+# - Premiums become too thin, and even normal daily moves threaten strikes.
+# - Focus trading on IV > 12.5% where premium offers sufficient protection.
+
+# New Note:
+# - Simulated weekly calendar now implemented.
+# - No trades opened on Saturdays and Sundays to match real-world market behavior.
+# - Improves backtest realism and protects from fake weekend positions.
+
+# New Note:
+# - @dataclass automatically generates __init__ and __repr__ methods for classes like Config and Condor.
+# - Helps keep the code short, readable, and free of manual constructor code.
+
+
+# New Note:
+'''
+# --- Adjusting Condor Width Based on Volatility & Stock Category ---
+def determine_strike_width(vol, base_width=6, stock_category="large_cap"):
+    if vol > 50:
+        return 0  # Stop opening condors if VIX > 50%
+    elif vol > 35:
+        # Adjust widths for VIX between 35% and 50%
+        if stock_category == "large_cap":
+            return base_width * 1.4  # Widen by 1.4x for large caps like TSLA
+        elif stock_category == "mid_cap":
+            return base_width * 1.3  # Widen by 1.3x for mid caps
+        elif stock_category == "small_cap":
+            return base_width * 1.5  # Widen by 1.5x for small caps ($5-$20 stocks)
+    else:
+        return base_width  # Default width for VIX ≤ 35%
+
+# --- Adjust Condor Creation Logic ---
+def create_condor(day, price, current_vol, stock_category="large_cap"):
+    dte = config.DTE_CHOICES[day % 2]
+    width = determine_strike_width(current_vol, config.BASE_WIDTH, stock_category)
+    strike_gap = condor_strike_distance(put_premiums.iloc[day], call_premiums.iloc[day])
+
+    return Condor(
+        open_day=day,
+        DTE=dte,
+        lower_put=price - (width + strike_gap),
+        lower_call=price - strike_gap,
+        upper_put=price + strike_gap,
+        upper_call=price + (width + strike_gap),
+        credit=config.TARGET_CREDIT
+    )
+
+# --- Main Simulation Loop ---
+for day, price in enumerate(prices):
+    current_vol = volatility.iloc[day]
+
+    # Volatility switch: Stop condor creation if VIX > 50%
+    if current_vol > 50:
+        print(f"VIX > 50% Detected on Day {day}. No Condors Opened.")
+        continue  # Skip condor creation
+
+    # Determine stock category (could be dynamically assigned based on symbol)
+    stock_category = "large_cap"  # Example: dynamically assign this based on stock type (e.g., TSLA, SPY)
+
+    # Condor creation and management for normal and mid-volatility conditions
+    if current_vol <= 50:  # Only create condors if volatility is within manageable range
+        condor = create_condor(day, price, current_vol, stock_category)
+        open_condors.append(condor)
+
+    # Continue managing condors as before...
+'''

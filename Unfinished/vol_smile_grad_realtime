@@ -1,0 +1,119 @@
+# Program: vol_smile_grad_realtime
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Real-time optimized version of the volatility cube visualization.
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.interpolate import make_interp_spline
+import time
+
+# Pre-setup: strike and expiry axes (fixed)
+strikes = np.linspace(10, 60, 200)
+expiries = np.linspace(5, 30, 10)
+
+fig = plt.figure(figsize=(10, 6))
+ax = fig.add_subplot(111, projection='3d')
+fig.patch.set_facecolor('black')
+ax.set_facecolor('black')
+ax.w_xaxis.set_pane_color((0, 0, 0, 1))
+ax.w_yaxis.set_pane_color((0, 0, 0, 1))
+ax.w_zaxis.set_pane_color((0, 0, 0, 1))
+ax.set_xlabel("Strike", labelpad=-30)
+ax.xaxis.label.set_color('white')
+ax.set_ylabel("Expiry", labelpad=-25)
+ax.yaxis.label.set_color('white')
+ax.set_zlabel("Implied Volatility", labelpad=-25)
+ax.zaxis.label.set_color('white')
+
+plt.ion()
+
+# Note: insert real-time data fetch from Yahoo Finance, Benzinga, etc.
+# Example placeholder:
+# from some_data_api import get_option_chain
+# option_data = get_option_chain('GME')
+
+# Note: implement data freshness check here:
+# - Track last 3 attempts in 10s window
+# - If no update in all 3, skip refresh (freeze current figure)
+# update_attempts = []
+# def has_new_data():
+#     current_time = time.time()
+#     update_attempts.append(current_time)
+#     if len(update_attempts) > 3:
+#         update_attempts.pop(0)
+#     return data_timestamp_changed_since_last_call()
+# if not has_new_data():
+#     continue
+
+# Note: Re-creating entire plot each cycle — not optimal for performance
+# Consider using set_data_3d() to update existing artists instead of clearing plot
+while True:
+    # ax.cla()  # replaced with persistent lines if set_data_3d() used below
+
+    # Recalculate IV surfaces (simulate update)
+    iv_slices = []
+    for t in expiries:
+        smile = 0.2 + 0.1 * np.exp(-((strikes - 35) ** 2) / 50) + 0.02 * (30 - t) / 30
+        if t > 10:
+            smile += 0.15 * np.exp(-((strikes - 45) ** 2) / 5)
+        if t > 20:
+            smile += 0.25 * np.exp(-((strikes - 50) ** 2) / 4)
+        iv_slices.append(smile)
+
+while True:
+    # ax.cla()  # replaced with persistent lines if set_data_3d() used below
+
+    # Note: Use persistent Line3D objects for updating without full redraw
+if 'iv_lines' not in locals():
+    iv_lines = []
+    for i in range(len(expiries)):
+        expiry_val = expiries[i] * np.ones_like(strikes)
+        dummy_iv = np.zeros_like(strikes)
+        line, = ax.plot(strikes, expiry_val, dummy_iv, color=plt.cm.nipy_spectral(i / len(expiries)), alpha=1.0 - (i / len(expiries)) * 0.8)
+        iv_lines.append(line)
+else:
+    for i, iv in enumerate(iv_slices):
+        expiry_val = expiries[i] * np.ones_like(strikes)
+        iv_lines[i].set_data_3d(strikes, expiry_val, iv)
+    for i, iv in enumerate(iv_slices):
+        alpha = 1.0 - (i / len(iv_slices)) * 0.8
+        expiry_val = expiries[i] * np.ones_like(strikes)
+        line, = ax.plot(strikes, expiry_val, iv, color=plt.cm.nipy_spectral(i / len(iv_slices)), alpha=alpha)
+        iv_lines.append(line)
+
+    # Example update call in future: iv_lines[i].set_data_3d(strikes, expiry_val, new_iv_data)
+
+    # Scimitar curve
+    peak_strikes = [strikes[np.argmax(iv)] for iv in iv_slices]
+    peak_ivs = [np.max(iv) for iv in iv_slices]
+    spline = make_interp_spline(expiries, peak_strikes, k=3)
+    curve_expiries = np.linspace(expiries[0], expiries[-1], 300)
+    curve_strikes = spline(curve_expiries)
+    curve_strikes += 1 * ((curve_expiries - expiries[0]) / (expiries[-1] - expiries[0]))**1
+    curve_ivs = np.interp(curve_expiries, expiries, peak_ivs)
+    ax.plot(curve_strikes, curve_expiries, curve_ivs, color='deepskyblue', linewidth=2.0)
+    ax.plot(curve_strikes, np.full_like(curve_strikes, expiries[-1]), curve_ivs, color='grey', linestyle='--', linewidth=1.2)
+
+    # Projected backward trail
+    strike_tail = curve_strikes[-1]
+    median_strike_nearest = strikes[np.argmax(iv_slices[0])]
+    backward_strike = np.linspace(strike_tail, median_strike_nearest, 50)
+    backward_iv = np.full_like(backward_strike, curve_ivs[-1])
+    backward_expiry = np.full_like(backward_strike, expiries[-1])
+    colors = cm.hot(np.linspace(0.4, 0.9, len(backward_strike)))
+    # Note: glow_factor increases toward the end of the trail for visual emphasis
+# for i in range(len(backward_strike) - 1):
+#     glow_factor = 1.5 * (i / len(backward_strike)) + 0.5
+#     ax.plot(backward_strike[i:i+2], backward_expiry[i:i+2], backward_iv[i:i+2], color=colors[i], linewidth=2.0 * glow_factor)
+for i in range(len(backward_strike) - 1):
+    ax.plot(backward_strike[i:i+2], backward_expiry[i:i+2], backward_iv[i:i+2], color=colors[i], linewidth=2.0)
+
+    ax.view_init(elev=8, azim=-100)
+    plt.draw()
+    plt.pause(5.0)  # refresh every 5 seconds

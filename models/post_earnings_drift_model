@@ -12,6 +12,8 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 
+from utils.exclusion_tools import should_trade_on
+
 # --- Placeholder: List of earnings dates and surprise info (to be replaced with real data) ---
 # Expected format: Date, Ticker, Surprise, ClosePriceOnEarningsDay
 sample_earnings_data = [
@@ -31,10 +33,17 @@ SLIPPAGE = 0.001  # 0.1% slippage
 trades = []
 
 for _, row in earnings_df.iterrows():
+    # loops over each row of earnings_df DataFrame
+    # the _ is a placeholder for the row index (Pandas)
     ticker = row['Ticker']
     earnings_date = row['Date']
     surprise = row['Surprise']
     if surprise < MIN_SURPRISE:
+        continue
+
+    entry_day = earnings_date + timedelta(days=1)
+    if not should_trade_on(entry_day):
+        print(f"[SKIP] Excluded trade on {entry_day.date()} for {ticker}")
         continue
 
     # Download price data for 10 days after earnings

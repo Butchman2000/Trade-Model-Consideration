@@ -1,0 +1,93 @@
+# Program: vol_smile_grad_visual
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Build IV surface slices for each expiry, simulating a smile per layer with UOA distortion
+
+  import numpy as np
+import matplotlib.pyplot as plt
+
+# Generate strike and expiry axes (wider range for squeeze behavior)
+strikes = np.linspace(10, 60, 200)
+expiries = np.linspace(5, 30, 10)  # 10 discrete expiry slices
+strike_grid = np.tile(strikes, (len(expiries), 1))
+
+# Build IV slices with exaggerated UOA distortion
+iv_slices = []
+for idx, t in enumerate(expiries):
+    # Normal smile centered at $35 now
+    smile = 0.2 + 0.1 * np.exp(-((strikes - 35) ** 2) / 50) + 0.02 * (30 - t) / 30
+
+    # Injected UOA distortions: more extreme for dramatic pre-squeeze look
+    if t > 10:
+        smile += 0.15 * np.exp(-((strikes - 45) ** 2) / 5)  # forward UOA zone 1
+    if t > 20:
+        smile += 0.25 * np.exp(-((strikes - 50) ** 2) / 4)  # deeper squeeze signature
+
+    iv_slices.append(smile)
+
+# Plot stacked smile contours as fading slices
+# Also generate a curve of best fit across expiries at peak IV points
+from mpl_toolkits.mplot3d import Axes3D
+fig = plt.figure(figsize=(10, 6))
+ax = fig.add_subplot(111, projection='3d')
+ax.set_facecolor('grey')
+ax.w_xaxis.set_pane_color((200/255, 200/255, 200/255, 1))
+ax.w_zaxis.set_pane_color((200/255, 200/255, 200/255, 1))
+ax.w_yaxis.set_pane_color((150/255, 150/255, 150/255, 1))
+fig.patch.set_facecolor('black')
+# 3D axes do not support set_facecolor directly
+for i, iv in enumerate(iv_slices):
+    alpha = 1.0 - (i / len(iv_slices)) * 0.8
+    expiry_val = expiries[i] * np.ones_like(strikes)
+    ax.plot(strikes, expiry_val, iv, color=plt.cm.cubehelix(i / len(iv_slices)), alpha=alpha, label=f'{int(expiries[i])}d')
+
+ax.set_xlabel("Strike", labelpad=-30)
+ax.xaxis.label.set_color('white')
+ax.set_ylabel("Expiry", labelpad=-25)
+ax.yaxis.label.set_color('white')
+ax.set_zlabel("Implied Volatility", labelpad=-25)
+ax.zaxis.label.set_color('white')
+ax.view_init(elev=8, azim=-100)  # flipped azimuth for forward-facing
+ax.set_title("Simulated Pre-Squeeze Volatility Stack (UOA Distortion)")
+
+## Note: Each curve corresponds to a different expiry. Scimitar curve shows projected tension path.
+plt.grid(True)
+plt.tight_layout()
+# Fit curve: track strike with max IV for each expiry
+peak_strikes = [strikes[np.argmax(iv)] for iv in iv_slices]
+peak_ivs = [np.max(iv) for iv in iv_slices]
+
+# Create a scimitar-style curve by exaggerating curvature on the tail
+from scipy.interpolate import make_interp_spline
+spline = make_interp_spline(expiries, peak_strikes, k=3)
+curve_expiries = np.linspace(expiries[0], expiries[-1], 400)
+curve_strikes = spline(curve_expiries)
+
+# Manually accentuate the curve head upward like a scimitar blade tip
+curve_strikes += 1 * ((curve_expiries - expiries[0]) / (expiries[-1] - expiries[0]))**1
+curve_ivs = np.interp(curve_expiries, expiries, peak_ivs)
+
+# Plot scimitar path
+# Add projection of the scimitar onto the strike vs IV back wall
+ax.plot(curve_strikes, curve_expiries, curve_ivs, color='deepskyblue', linestyle='-', linewidth=2.5, label='Scimitar Curve')
+
+# Projected scimitar path on Strike vs IV back wall (Expiry crushed to max)
+ax.plot(curve_strikes, np.full_like(curve_strikes, expiries[-1]), curve_ivs, color='grey', linestyle='--', linewidth=1.2)
+
+#ax.legend(title="Expiry", loc='upper right')
+# Project backward strike movement on the back wall
+strike_tail = curve_strikes[-1]
+median_strike_nearest = strikes[np.argmax(iv_slices[0])]
+backward_strike = np.linspace(strike_tail, median_strike_nearest, 50)  # reversed to flip direction
+backward_iv = np.full_like(backward_strike, curve_ivs[-1])
+backward_expiry = np.full_like(backward_strike, expiries[-1])
+from matplotlib import cm
+colors = cm.hot(np.linspace(0.9,0.4, len(backward_strike)))
+for i in range(len(backward_strike) - 1):
+    glow_factor = 1.5 * (i / len(backward_strike)) + 0.5
+    ax.plot(backward_strike[i:i+2], backward_expiry[i:i+2], backward_iv[i:i+2], color=colors[i], linewidth=2.0 * glow_factor)
+
+plt.show()

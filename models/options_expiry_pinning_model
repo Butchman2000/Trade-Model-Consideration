@@ -1,4 +1,4 @@
-# Program: options_expiry_pinning
+# Program: options_expiry_pinning_model
 # Author: Brian Anderson
 # Origin Date: 01May2025
 # Version: 1.0
@@ -11,6 +11,8 @@
 
 import pandas as pd
 from datetime import datetime, timedelta
+
+from utils.exclusion_tools import should_trade_on
 
 # This is a conceptual scaffold; real implementation depends on your access to options OI data.
 # You’ll need to plug in actual OI and price data from a provider like ORATS, OptionMetrics, or scraped via brokerage API.
@@ -32,16 +34,23 @@ def get_third_fridays(start, end):
 # --- Step 2: Find Top OI Strikes Near Expiry ---
 def identify_pinning_targets(oi_data, expiry_window):
     signals = []
+
     for expiry_date in expiry_window:
-        week_data = oi_data[oi_data['Date'] == expiry_date - timedelta(days=2)]  # 2 days before expiry
-        if week_data.empty: continue
+    signal_date = expiry_date - timedelta(days=2)
+    if not should_trade_on(signal_date):
+        print(f"[SKIP] Signal blocked on {signal_date.date()} due to exclusion.")
+        continue
+
+    week_data = oi_data[oi_data['Date'] == signal_date]  # <- this was accidentally overwritten
+    if week_data.empty:
+        continue
 
         grouped = week_data.groupby('Strike')['Open_Interest'].sum().reset_index()
         top_strike = grouped.sort_values('Open_Interest', ascending=False).iloc[0]['Strike']
 
         candidates = week_data[abs(week_data['Close_Price'] - top_strike) / top_strike <= 0.02]  # within 2%
 
-        for _, row in candidates.iterrows():
+        for _, row in candidates.iterrows():  # loops over each row in the earnings_df DataFrame (Pandas)
             signals.append({
                 'Date': expiry_date,
                 'Ticker': row['Ticker'],

@@ -1,21 +1,39 @@
 # Program: Main
 # Author: Brian Anderson
 # Origin Date: 30April2025
-# Version: 1.0
+# Version: 1.1
 #
 # Purpose:
-#   /This script acts as the main command-line interface (CLI) for the Exclusions Backtest Framework.
-#   /It allows users and collaborators to:
-#   /  - Run all test suites to validate exclusion logic for 2020–2024 (include 2019 if time available).
-#   /  - Load specific year's exclusion module for use in a trading/backtest engine.
-#   /  - Optionally visualize exclusion patterns (stub included).
-#   / Intended for collaboration between beginner and experienced developers, with modular support.
+#    /This script acts as the main command-line interface (CLI) for the exclusions backtest framework.
+#    /It allows users and collaborators to:
+#    /  - Run all test suites to validate exclusion logic for 2019–2024.
+#    /  - Load specific year's exclusion module for use in a trading/backtest engine.
+#    /  - Optionally visualize exclusion patterns (stub is included).
+#    / Intended for collaboration between beginner and experienced developers, with modular support.
+#
+#    /Needs further development for incorporation of CLI for trading models.
 
 import argparse
 import importlib
 import sys
 import unittest
 from datetime import datetime
+
+# Incorporate audit and compliance related elements, in preparation for future lock
+# Will model 21 CFR 11 Data integrity, Operational transparency, and
+# Manual overrides for critical action control:
+
+from audit import ComplianceLogger, check_env_vars, wait_for_external_approval
+'''
+To run tests:    /python -m tests.test_audit_tools
+
+Approval Simulation:
+{
+  "approved": true,
+  "approved_by": "tester@example.com",
+  "timestamp": "2025-05-01T14:33:00"
+}
+'''
 
 # -------------------------------------------
 # Argument Parsing and Command Line Handling
@@ -51,6 +69,7 @@ def parse_arguments():
 # Useful to verify all your logic is still correct.
 def run_all_tests():
     test_modules = [
+        "tests.test_exclusions_2008",
         "tests.test_exclusions_2019",
         "tests.test_exclusions_2020",
         "tests.test_exclusions_2021",

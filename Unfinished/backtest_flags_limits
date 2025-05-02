@@ -1,0 +1,56 @@
+# Program: backtest_flags_limits
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /A simple survival backtest skeleton.
+
+import pandas as pd
+
+# Example: load historical candles
+candles = pd.read_csv('historical_data.csv')  # Assume: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+
+# Placeholder for a flagging function
+def flag_signals(row):
+    flags = []
+    # Example checks
+    if (row['close'] > row['open'] * 1.05):
+        flags.append('squeeze')
+    if (row['low'] < row['open'] * 0.95):
+        flags.append('pullback')
+    return flags
+
+# Loss limits
+MAX_LOSS_PERCENT = -5  # E.g., max 5% loss
+
+# Simulated account
+account = {
+    'balance': 100000,
+    'position': None,
+    'entry_price': None,
+    'equity_type': 'smallcap',  # Example equity type
+}
+
+# Backtest loop
+for idx, row in candles.iterrows():
+    signals = flag_signals(row)
+    
+    # Assume we "buy" if a signal fires and we have no position
+    if signals and account['position'] is None:
+        account['position'] = 'long'
+        account['entry_price'] = row['close']
+        print(f"ENTRY at {row['timestamp']} due to {signals}")
+
+    # If we are in a position, check limits
+    if account['position']:
+        change_pct = (row['close'] - account['entry_price']) / account['entry_price'] * 100
+        
+        if change_pct <= MAX_LOSS_PERCENT:
+            print(f"STOPPED OUT at {row['timestamp']} with {change_pct:.2f}%")
+            account['balance'] *= (1 + change_pct / 100)
+            account['position'] = None
+            account['entry_price'] = None
+
+# End results
+print(f"Final balance: {account['balance']:.2f}")

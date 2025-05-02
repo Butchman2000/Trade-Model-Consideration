@@ -36,14 +36,14 @@ def identify_pinning_targets(oi_data, expiry_window):
     signals = []
 
     for expiry_date in expiry_window:
-    signal_date = expiry_date - timedelta(days=2)
-    if not should_trade_on(signal_date):
-        print(f"[SKIP] Signal blocked on {signal_date.date()} due to exclusion.")
-        continue
+        signal_date = expiry_date - timedelta(days=2)
+        if not should_trade_on(signal_date):
+            print(f"[SKIP] Signal blocked on {signal_date.date()} due to exclusion.")
+            continue
 
-    week_data = oi_data[oi_data['Date'] == signal_date]  # <- this was accidentally overwritten
-    if week_data.empty:
-        continue
+        week_data = oi_data[oi_data['Date'] == signal_date]  # <- this was accidentally overwritten
+        if week_data.empty:
+            continue
 
         grouped = week_data.groupby('Strike')['Open_Interest'].sum().reset_index()
         top_strike = grouped.sort_values('Open_Interest', ascending=False).iloc[0]['Strike']

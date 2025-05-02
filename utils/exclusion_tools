@@ -1,0 +1,47 @@
+# Program: exclusion_tools
+# Author: Brian Anderson
+# Origin Date: 01May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Centralized utility for applying trading day exclusions.
+#    /Used by all strategy models to ensure consistency with macro/calendar filters.
+
+import importlib
+
+def load_exclusions_by_year(year):
+    try:
+        module_name = f"exclusions.exclusions_{year}"
+        exclusions = importlib.import_module(module_name)
+        return exclusions
+    except ImportError:
+        print(f"[ERROR] Could not load exclusions for year {year}.")
+        print("[HINT] Ensure 'exclusions/exclusions_<year>.py' exists and is spelled correctly.")
+        return None
+
+def should_trade_on(date):
+    year = date.year
+    exclusions = load_exclusions_by_year(year)
+
+    if exclusions is None:
+        print("[WARNING] No exclusions module loaded — assuming it's okay to trade.")
+        return True
+
+    if not exclusions.is_valid_trading_day(date):
+        print(f"[BLOCKED] {date.date()} is not a valid trading day.")
+        return False
+
+    if exclusions.exit_time_on_fomc_day(date):  # FOMC?
+        print("[NOTE] Early exit due to FOMC event.")
+    if exclusions.exit_time_on_half_day(date):  # A half day, like Thanksgiving?
+        print("[NOTE] Half-day — trade cautiously or exit early.")
+    if exclusions.powell_speech_blackout(date): # Fed speech?
+        print("[NOTE] Powell speech blackout window in effect.")
+    if exclusions.quad_witching_exit_time(date):  # Quad Friday?
+        print("[NOTE] Quad witching day early close in effect.")
+    if exclusions.nfp_trading_restrictions(date):  # NFP releases?
+        print("[NOTE] NFP release — time restriction in effect.")
+    if exclusions.election_day_halt(date):  # Election?
+        print("[NOTE] Election day halt — do not trade.")
+
+    return True

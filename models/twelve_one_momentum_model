@@ -50,61 +50,7 @@ BOTTOM_DECILE = 0.10
 #   /exclusions.is_valid_trading_day(datetime(...))
 # ---
 
-def load_exclusions_by_year(year):
-    try:
-        module_name = f"exclusions.exclusions_{year}"
-        exclusions = importlib.import_module(module_name)
-        return exclusions
-    except ImportError as e:
-        print(f"[ERROR] Could not load exclusions for year {year}.")
-        print("[HINT] Ensure 'exclusions/exclusions_<year>.py' exists and is spelled correctly.")
-        return None  # More beginner-friendly fallback than raising error
-
-# ---
-# Function: should_trade_on
-# Description:
-#   /Applies all relevant exclusion filters to a date.
-#   /Returns False if any filter deems trading inappropriate.
-# ---
-
-def should_trade_on(date):
-    year = date.year
-    exclusions = load_exclusions_by_year(year)
-
-    if exclusions is None:
-        print("[WARNING] No exclusions module loaded — assuming it's okay to trade.")
-        return True
-
-    if not exclusions.is_valid_trading_day(date):
-        print(f"[BLOCKED] {date.date()} is not a valid trading day.")
-        return False
-
-    # These do not block trading, but serve as warnings
-    if exclusions.exit_time_on_fomc_day(date):
-        print("[NOTE] Early exit due to FOMC event.")
-    if exclusions.exit_time_on_half_day(date):
-        print("[NOTE] Half-day — trade cautiously or exit early.")
-    if exclusions.powell_speech_blackout(date):
-        print("[NOTE] Powell speech blackout window in effect.")
-    if exclusions.quad_witching_exit_time(date):
-        print("[NOTE] Quad witching day early close in effect.")
-    if exclusions.nfp_trading_restrictions(date):
-        print("[NOTE] NFP release — time restriction in effect.")
-    if exclusions.election_day_halt(date):
-        print("[NOTE] Election day halt — do not trade.")
-
-    return True
-
-# ---
-# Function: run_model
-# Description:
-#   /The main callable logic for executing a strategy.
-#   /This stub will eventually house signal generation logic.
-# ---
-
-def run_model(data, date, vix_data, vix_state):
-    if not should_trade_on(date):
-        return None
+from utils.exclusion_tools import should_trade_on
 
     decision, vix_state = vix_whipsaw_filter(date, vix_data, vix_state)
 

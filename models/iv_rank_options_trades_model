@@ -38,10 +38,19 @@ df['IV_Percentile'] = df['IV'].rolling(window).apply(lambda x: np.mean(x < x.ilo
 df['Sell_Premium'] = df['IV_Rank'] > 0.70
 
 # Simulated returns: sell premium = short vol (mean reverts); buy premium = long vol
+from utils.exclusion_tools import should_trade_on
+
 df['Daily_Return'] = 0.0
-sell_signal_days = df['Sell_Premium']
-df.loc[sell_signal_days, 'Daily_Return'] = np.random.normal(0.01, 0.005, sell_signal_days.sum())
+
+for date in df.index:
+    if df.loc[date, 'Sell_Premium']:
+        if not should_trade_on(date):
+            print(f"[SKIP] Excluded signal on {date.date()}")
+            continue
+        df.loc[date, 'Daily_Return'] = np.random.normal(0.015, 0.01)
+
 df['Equity'] = (1 + df['Daily_Return']).cumprod()
+sell_signal_days = df['Daily_Return'] != 0
 
 # --- Output ---
 print("\nIV Rank Options Strategy Backtest Results")

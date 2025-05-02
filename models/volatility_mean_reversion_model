@@ -29,8 +29,17 @@ df['IV_Percentile'] = df['IV'].rolling(lookback).apply(lambda x: np.mean(x < x.i
 df['Sell_Vol'] = df['IV_Percentile'] > 0.9
 
 # --- Simulate trade P&L (proxy for short straddle decay with mean reversion) ---
+from utils.exclusion_tools import should_trade_on
+
 df['Daily_Return'] = 0.0
-signal_days = df['Sell_Vol']
+
+for date in df.index:
+    if df.loc[date, 'Sell_Vol']:
+        if not should_trade_on(date):
+            print(f"[SKIP] Excluded signal on {date.date()}")
+            continue
+        df.loc[date, 'Daily_Return'] = np.random.normal(0.015, 0.01)
+
 df.loc[signal_days, 'Daily_Return'] = np.random.normal(0.015, 0.01, signal_days.sum())
 df['Equity'] = (1 + df['Daily_Return']).cumprod()
 
@@ -38,6 +47,7 @@ df['Equity'] = (1 + df['Daily_Return']).cumprod()
 print("\nVolatility Mean Reversion Strategy Results")
 print("-----------------------------------------")
 print(df[['IV', 'IV_Percentile', 'Sell_Vol', 'Daily_Return']].tail())
+signal_days = (df['Daily_Return'] != 0)
 print(f"\nTotal Signals: {signal_days.sum()}")
 print(f"Final Equity (proxy): {df['Equity'].iloc[-1]:.2f}")
 print(f"Mean Return on Signal Days: {df.loc[signal_days, 'Daily_Return'].mean():.2%}")

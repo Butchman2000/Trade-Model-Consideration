@@ -1,6 +1,24 @@
+::Confidential -- For Jade Harbor Finance Only
+
+All material belongs to the author, and is not to be copied, altered, or used without express permission.
+The intellectual property involved in this repository belongs solely to the author, or assigns.
+
+This README is unfinished, and is evolving as it moves forward in development.
+
+
+
+
 # --- Trade-Model-Consideration ---
 Collection of several trading models, constraints, code, and backtesting results.
 
+The trading activity within each model, is limited to AVOID the dates and times of the exclusion parameters.
+The exception is the SPX VIX model, which may benefit from index/volatility disconnection; flagging is used instead.
+
+
+# --- Unfinished Material ---
+Collection of some additional models and alternative ideas, in need of further consideration, adaptation, or removal.
+
+They are not to be involved in any other part of the repository, and are solely for exploratory purposes.
 
 
 
@@ -8,7 +26,7 @@ Collection of several trading models, constraints, code, and backtesting results
 
 This project includes a self-contained audit framework designed to meet high-integrity logging, traceability, and external validation requirements. It supports oversight from limited partners, auditors, or quality control personnel.
 
-Features
+Features:
 
 Structured JSON logging of all monitored events, including timestamps and context
 

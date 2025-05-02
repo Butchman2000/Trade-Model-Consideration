@@ -27,6 +27,8 @@ import yfinance as yf
 import numpy as np
 import matplotlib.pyplot as plt
 
+from utils.exclusion_tools import load_exclusions_by_year
+
 # --- SETTINGS ---
 START_DATE = "2019-01-01"
 END_DATE = "2025-01-01"
@@ -45,62 +47,6 @@ MODEL = {
     'threshold': 60,
     'min_duration': 3,
 }
-
-# ---
-# Function: load_exclusions_by_year
-# Description:
-#   /Dynamically loads the exclusion module for a given year.
-#   /Assumes a file exists in exclusions/ named exclusions_<year>.py
-# Example:
-#   /year = 2024
-#   /exclusions = load_exclusions_by_year(2024)
-#   /exclusions.is_valid_trading_day(datetime(...))
-# ---
-
-def load_exclusions_by_year(year):
-    try:
-        module_name = f"exclusions.exclusions_{year}"
-        exclusions = importlib.import_module(module_name)
-        return exclusions
-    except ImportError as e:
-        print(f"[ERROR] Could not load exclusions for year {year}.")
-        print("[HINT] Ensure 'exclusions/exclusions_<year>.py' exists and is spelled correctly.")
-        return None  # More beginner-friendly fallback than raising error
-
-# ---
-# Function: should_trade_on
-# Description:
-#   /Applies all relevant exclusion filters to a date.
-#   /Returns False if any filter deems trading inappropriate.
-# ---
-
-def should_trade_on(date):
-    year = date.year
-    exclusions = load_exclusions_by_year(year)
-
-    if exclusions is None:
-        print("[WARNING] No exclusions module loaded — assuming it's okay to trade.")
-        return True
-
-    if not exclusions.is_valid_trading_day(date):
-        print(f"[BLOCKED] {date.date()} is not a valid trading day.")
-        return False
-
-    # These do not block trading, but serve as warnings
-    if exclusions.exit_time_on_fomc_day(date):
-        print("[NOTE] Early exit due to FOMC event.")
-    if exclusions.exit_time_on_half_day(date):
-        print("[NOTE] Half-day — trade cautiously or exit early.")
-    if exclusions.powell_speech_blackout(date):
-        print("[NOTE] Powell speech blackout window in effect.")
-    if exclusions.quad_witching_exit_time(date):
-        print("[NOTE] Quad witching day early close in effect.")
-    if exclusions.nfp_trading_restrictions(date):
-        print("[NOTE] NFP release — time restriction in effect.")
-    if exclusions.election_day_halt(date):
-        print("[NOTE] Election day halt — do not trade.")
-
-    return True
 
 def run_divergence_model():
     # Note to self: Executes the spx-vix divergence strategy.
@@ -151,6 +97,7 @@ def run_divergence_model():
     SLIPPAGE_RATE = MODEL['slippage']
 
     # Iterate through signals
+    excluded_tagged = 0
     trades = []
     for date in data.index[data['Signal']]:
         entry_index = data.index.get_loc(date) + 1
@@ -158,6 +105,13 @@ def run_divergence_model():
             continue
 
         entry_date = data.index[entry_index]
+        
+        # Do a soft exclusion (notification only)
+        exclusions = load_exclusions_by_year(entry_date.year)
+        if exclusions and not exclusions.is_valid_trading_day(entry_date):
+            print(f"[NOTE] Entry on {entry_date.date()} falls on an exclusion-defined sensitive day.")
+            excluded_tagged += 1
+
         entry_price = data.loc[entry_date, 'SPY_Open'] * (1 - SLIPPAGE_RATE)  # short entry worse by 1.5%
 
         # Look forward 5 days or until SPY drops 2%
@@ -189,9 +143,10 @@ def run_divergence_model():
 
     compute_cagr_and_max_drawdown(signals)
  
+    print(f"[INFO] {excluded_tagged} of {len(trades)} trades occurred on flagged exclusion dates.")
+
     return trades, results
     
-
 # --- Performance Calculation Utilities ---
 
 def compute_cagr_and_max_drawdown(signals):

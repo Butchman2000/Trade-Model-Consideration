@@ -17,6 +17,8 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
+from utils.exclusion_tools import should_trade_on
+
 # --- Download SPY historical daily data ---
 data = yf.download('SPY', start='2005-01-01', end='2024-01-01')
 data = data[['Open', 'Close']].copy()
@@ -49,6 +51,10 @@ tom_periods = get_tom_dates(data)
 trades = []
 
 for entry_date, exit_date in tom_periods:
+    if not should_trade_on(entry_date):
+        print(f"[SKIP] Blocked by exclusion: {entry_date.date()}")
+        continue
+
     if entry_date not in data.index or exit_date not in data.index:
         continue
 

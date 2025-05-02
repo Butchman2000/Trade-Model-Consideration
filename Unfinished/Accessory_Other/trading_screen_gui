@@ -1,0 +1,129 @@
+# Program Name: Trading Screen GUI
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.9
+#
+# Purpose:
+#    /This program creates a full-screen trading dashboard that displays rectangular sections for data visualization.
+#    /The display is structured in a grid format with a maximum of 6 columns and 5 rows, ensuring that at least
+#    /one unit of the screen is always occupied by relevant output. The layout automatically rearranges itself no 
+#    /more than once every 30 seconds, providing a stable yet dynamic interface for trading insights. Users can 
+#    /toggle fullscreen mode using the F11 key or exit fullscreen using the Escape key. This GUI is designed to 
+#    /work in a multi-screen setup, allowing the user to assign which screen the interface should appear on.
+# 
+# Whenever a stock is picked, a set of four objects appears:
+# - A 2x2 unit stock chart displaying data from 7 AM to the current time.
+# - A 2x2 unit stock chart displaying data for the most recent 30-minute window.
+# - A 1x2 unit RSI section.
+# - A 1x2 unit MACD section.
+# These four objects are grouped together so that they stay in a fixed relative position when shifting across the screen.
+# A second and third block of four objects are also displayed for additional stocks, ensuring that they do not overlap.
+# If screen resolution constraints require slight overlapping, minor adjustments will be made dynamically.
+# 
+# NOTE: The user will be prompted at startup to select a layout adjustment mode:
+# 1. **Automatic Adjustment** - If 4 to 6 stock blocks need to be displayed, the vertical space for the initial three blocks
+#      will be reduced by ~50%, creating space for three more blocks below them.
+# 2. **Manual Toggle Option** - Allows the user to activate the compressed layout manually when needed.
+# 3. **EMA/VWAP Toggles** - Users can enable/disable EMA9, EMA20, and VWAP overlays as thin colored lines on stock charts.
+# 
+# Performance Recommendations:
+# - Use Python 3.7+ for best compatibility.
+# - Enable DPI awareness to prevent scaling issues on high-resolution displays.
+# - Use 64-bit Python if your system supports it to avoid potential Tkinter limitations.
+
+import tkinter as tk
+from tkinter import Canvas, simpledialog, Checkbutton, BooleanVar
+import time
+import math
+import ctypes
+
+# Enable DPI Awareness for high-resolution displays
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except:
+    pass
+
+class TradingScreen:
+    def __init__(self, root, screen_number=1):
+        self.root = root
+        self.root.configure(bg='grey')  # Background color for unused portions
+        
+        # Prompt user for layout adjustment mode
+        self.adjustment_mode = simpledialog.askstring("Layout Mode", "Choose layout mode: Automatic (A) or Manual (M)")
+        
+        # EMA & VWAP Toggle Variables
+        self.show_ema9 = BooleanVar(value=False)
+        self.show_ema20 = BooleanVar(value=False)
+        self.show_vwap = BooleanVar(value=False)
+        
+        # Checkbuttons to toggle EMA/VWAP indicators
+        self.ema9_toggle = Checkbutton(root, text="Show EMA9", variable=self.show_ema9)
+        self.ema9_toggle.pack()
+        self.ema20_toggle = Checkbutton(root, text="Show EMA20", variable=self.show_ema20)
+        self.ema20_toggle.pack()
+        self.vwap_toggle = Checkbutton(root, text="Show VWAP", variable=self.show_vwap)
+        self.vwap_toggle.pack()
+        
+        # Screen configuration
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        self.unit_size = min(math.ceil(screen_width / self.max_width_units), math.ceil(screen_height / self.max_height_units))
+        self.buffer_size = self.unit_size // 10  # Add buffer around blocks
+        self.last_arrange_time = time.time()
+        
+        self.canvas = Canvas(root, bg='grey', highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        self.objects = []  # Holds displayed objects
+        self.chart_groups = []  # Holds grouped charts, RSI, and MACD
+        self.create_initial_layout()
+        
+        # Fullscreen toggle
+        self.root.bind('<Escape>', self.exit_fullscreen)
+        self.root.bind('<F11>', self.toggle_fullscreen)
+        
+        # Multi-screen setup
+        self.setup_screen(screen_number)
+    
+    def create_initial_layout(self):
+        """ Arrange objects initially with constraints """
+        positions = [(0, 0), (3, 0), (0, 3)]  # Ensures separate placements for three blocks
+        stock_tickers = ["AAPL", "TSLA", "MSFT"]  # Placeholder ticker names
+        
+        for i, pos in enumerate(positions):  # Creating three blocks
+            x, y = pos[0] * self.unit_size + self.buffer_size, pos[1] * self.unit_size + self.buffer_size
+            
+            chart_7am = self.canvas.create_rectangle(x, y, x + 2*self.unit_size, y + 2*self.unit_size, fill='blue')
+            chart_30min = self.canvas.create_rectangle(x, y + 2*self.unit_size, x + 2*self.unit_size, y + 4*self.unit_size, fill='lightblue')
+            rsi = self.canvas.create_rectangle(x, y + 4*self.unit_size, x + 2*self.unit_size, y + 5*self.unit_size, fill='green')
+            macd = self.canvas.create_rectangle(x, y + 5*self.unit_size, x + 2*self.unit_size, y + 6*self.unit_size, fill='red')
+            
+            # Display stock ticker at top left of chart_7am
+            self.canvas.create_text(x + self.buffer_size, y + self.buffer_size, text=stock_tickers[i], 
+                                    anchor='nw', font=('Arial', 14, 'bold'), fill='red', bg='white')
+            
+            self.chart_groups.append((chart_7am, chart_30min, rsi, macd))
+    
+    def exit_fullscreen(self, event=None):
+        """ Exits fullscreen mode """
+        self.root.attributes('-fullscreen', False)
+    
+    def toggle_fullscreen(self, event=None):
+        """ Toggles fullscreen mode """
+        state = not self.root.attributes('-fullscreen')
+        self.root.attributes('-fullscreen', state)
+    
+    def setup_screen(self, screen_number):
+        """ Moves the window to the selected screen in a multi-screen setup """
+        self.root.update_idletasks()
+        screens = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        screen_width = screens[0] * (screen_number - 1)
+        self.root.geometry(f"{screens[0]}x{screens[1]}+{screen_width}+0")
+        self.root.attributes('-fullscreen', True)  # Ensure fullscreen mode
+        
+# Running the application on a specific screen
+if __name__ == "__main__":
+    screen_number = 2  # Change this number to run on a different screen
+    root = tk.Tk()
+    app = TradingScreen(root, screen_number)
+    root.mainloop()

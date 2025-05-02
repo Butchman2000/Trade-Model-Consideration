@@ -1,0 +1,82 @@
+# Program: three_simple_models
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /A collection of three simple, backtested-proven-successful strategies.
+#    /Their simplicity, with well-fitted parameters, built-in risk management
+#    /and survival across different market environments, justify future exploration.
+
+import pandas as pd
+from enum import Enum
+
+class Weekday(Enum):
+    MONDAY = 0
+    TUESDAY = 1
+    WEDNESDAY = 2
+    THURSDAY = 3
+    FRIDAY = 4
+
+
+# -----
+# Momentum Across Assets
+# -----
+
+# Sort energy assets by 6M return
+# Buy top 10%, rebalance monthly
+# Function to sort energy assets by 6M return
+def sort_energy_assets(data, months=6):
+    returns = data.pct_change(periods=months*21).dropna()
+    top_assets = returns.nlargest(int(len(returns.columns) * 0.1), returns.columns)
+    return top_assets.columns.tolist()
+
+# -----
+# Moving Average Cross for Index Futures
+# -----
+
+# Go long when 50SMA > 200SMA
+# Exit when 50SMA < 200SMA
+# SMA crossover logic tracking position state
+def sma_crossover_strategy(prices):
+    sma50 = prices.rolling(window=50).mean()
+    sma200 = prices.rolling(window=200).mean()
+    in_position = False
+    signals = []
+
+    for i in range(1, len(prices)):
+        if sma50.iloc[i] > sma200.iloc[i] and not in_position:
+            signals.append(('buy', i))
+            in_position = True
+        elif sma50.iloc[i] < sma200.iloc[i] and in_position:
+            signals.append(('sell', i))
+            in_position = False
+    return signals
+
+# -----
+# Opening Range Breakout on Intraday Futures
+# -----
+
+# Watch futures at Asian or European open
+# Enter breakout trade after 30 min if price exceeds threshold
+# Use small stop
+# Opening Range Breakout logic
+ASIAN_OPEN = '00:00'
+EUROPEAN_OPEN = '07:00'
+
+# Placeholder function for watching futures breakout
+# Assumes 'data' is a DataFrame with datetime index and 'price' column
+def watch_futures(data, open_time, threshold_ticks=10):
+    opening_range = data.between_time(open_time, (pd.to_datetime(open_time) + pd.Timedelta(minutes=30)).strftime('%H:%M'))
+    high = opening_range['price'].max()
+    low = opening_range['price'].min()
+    breakout_up = high + threshold_ticks
+    breakout_down = low - threshold_ticks
+
+    for timestamp, row in data.iterrows():
+        if timestamp.time() > pd.to_datetime(open_time).time():
+            if row['price'] >= breakout_up:
+                return 'buy', timestamp
+            elif row['price'] <= breakout_down:
+                return 'sell', timestamp
+    return None, None

@@ -1,0 +1,64 @@
+# Program: put_volatility_harvest
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /In times of very high volatility, mean reversion often permits value in selling puts.
+#    /Requires great care, as market instability or de-dollarization may threaten model.
+
+import pandas as pd
+import numpy as np
+
+# --- Configuration ---
+@dataclass
+class Config:
+    TARGET_CREDIT: float = 1.00
+    MAX_LOSS: float = 2.00
+    IV_THRESHOLD: float = 30.0  # IV threshold for selling naked puts
+    PREMIUM_CAPTURE: float = 0.50  # Capture 50% premium drop
+    MIN_VOL_TO_TRADE: float = 12.5
+    MAX_DAYS_TO_EXPIRY: int = 30  # Default 30 days to expiration
+
+config = Config()
+
+# --- Data Generation ---
+prices = pd.Series([100 + i*0.5 for i in range(100)])
+volatility = pd.Series(np.random.uniform(10, 40, size=100))  # Random IV between 10% and 40%
+put_premiums = pd.Series(np.random.uniform(0.5, 2.0, size=100))  # Simulated premium values
+strike_prices = pd.Series([100 for _ in range(100)])  # Placeholder strikes
+
+# --- Strategy Simulation ---
+open_puts = []
+trade_log = []
+
+for day, price in enumerate(prices):
+    current_vol = volatility.iloc[day]
+    
+    if current_vol >= config.IV_THRESHOLD:  # IV spike condition
+        strike = strike_prices.iloc[day]
+        premium = put_premiums.iloc[day]
+        
+        # Sell naked put if IV condition is met
+        open_puts.append({'day': day, 'strike': strike, 'premium': premium, 'open_price': price})
+        
+        print(f"Opened Naked Put on day {day}, Strike: {strike}, Premium: {premium}")
+    
+    # Monitor the open positions
+    for put in open_puts:
+        if price < put['strike']:  # If price goes below strike, evaluate risk
+            pnl = -(put['premium'])  # Max loss: premium collected
+            trade_log.append({'open_day': put['day'], 'close_day': day, 'pnl': pnl, 'close_reason': 'breach'})
+            open_puts.remove(put)
+            print(f"Closed Naked Put (loss) on day {day}, PnL: {pnl}")
+        
+        elif price > put['strike'] and (put['premium'] - premium * config.PREMIUM_CAPTURE) >= 0:
+            pnl = put['premium']  # Close early, capturing half premium drop
+            trade_log.append({'open_day': put['day'], 'close_day': day, 'pnl': pnl, 'close_reason': 'early_exit'})
+            open_puts.remove(put)
+            print(f"Closed Naked Put (profit) on day {day}, PnL: {pnl}")
+
+# --- Results ---
+results = pd.DataFrame(trade_log)
+print(results)
+print(f"Total P&L: {results['pnl'].sum():.2f}")

@@ -1,7 +1,7 @@
 # Program: pmcc_hard_param_check (helper)
 # Author: Brian Anderson
 # Origin Date: 02May2025
-# Version: 1.0
+# Version: 1.1
 #
 # Purpose:
 #    /Run the details of the options, like bid-ask, through initial criterion
@@ -9,9 +9,11 @@
 
 # --- Import the necessary functions, data, and variables
 
-from pmcc_scoring_helper import score_pmcc_combo
+from helper.pmcc_scoring_helper import score_pmcc_combo
 
 # -- Instantiate constructs/constraints/variables
+
+results = []
 
 # Placeholder: stock_price should be defined based on current market data
 stock_price = 100  # example static value; replace with dynamic fetch later
@@ -60,3 +62,30 @@ def evaluate_pmcc_candidates(available_long_calls_at,
             score = score_pmcc_combo(long_option, short_option, stock_price)
             print(f"Candidate PASSED: Long {long_option.strike}, Short {short_option.strike}, Score: {score:.3f}")
             # Note: Capture this elsewhere, for future improvement.
+
+            # Take resulting data from the program and put it into results matrix.
+            results.append({
+                "long_strike": long_option.strike,
+                "short_strike": short_option.strike,
+                "long_delta": long_option.delta,
+                "short_delta": short_option.delta,
+                "iv_spread": iv_spread,
+                "score": round(score, 3)
+            })
+
+# Show top candidates after evaluation
+
+def sort_by_score(item):
+    return item["score"]
+
+# Print total number of valid PMCC candidates
+number_results_found = len(results)
+print(f"Total valid PMCC combinations found: {number_results_found}")
+
+# Sort all valid PMCC results in descending order by score
+sorted_results = sorted(results, key=sort_by_score, reverse=True)
+
+# Take the top 5 entries from the sorted list
+top_ranked = sorted_results[:5]
+for r in top_ranked:
+    print(f"TOP: Long {r['long_strike']} / Short {r['short_strike']} — Score: {r['score']}")

@@ -1,0 +1,217 @@
+# Program: pmcc_optimizer
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.4
+# 
+# Purpose:
+#    /This is the main driver and lifecycle manager for PMCC trades.
+#    /It filters entry using centralized logic, it evaluates roll/exit conditions,
+#    /and it logs position state along with VIX conditions.
+
+import yfinance as yf
+import json
+from volatility_risk_filter import volatility_block_check
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+# PMCC trade evaluation constraints
+CONSTRAINTS = {
+    "min_long_delta": 0.60,
+    "max_long_delta": 0.72,
+    "min_short_delta": 0.18,
+    "max_short_delta": 0.35,
+    "max_long_slip": 0.07,
+    "max_short_slip": 0.04,
+    "min_iv_spread": 0.05,
+    "min_short_premium": 1.00,
+    "roll_max_short_delta": 0.6,
+    "roll_short_dte_threshold": 10,
+    "roll_price_near_short_pct": 0.95,
+    "exit_price_below_long_pct": 0.85
+}
+
+# Data container for PMCC trades
+class PMCCPosition:
+    def __init__(self, ticker, long_strike, long_exp, short_strike, short_exp):
+        self.ticker = ticker
+        self.long_strike = long_strike
+        self.long_exp = pd.to_datetime(long_exp)
+        self.short_strike = short_strike
+        self.short_exp = pd.to_datetime(short_exp)
+        self.history = []
+
+    def fetch_price(self):
+        stock = yf.Ticker(self.ticker)
+        price = stock.history(period="1d")['Close'].iloc[-1]
+        return price
+
+    def simulate_greeks(self):
+        # Placeholder for real-time Greek calculation logic
+        # Replace with brokerage or options API for production use
+        return {
+            'long_delta': 0.65,
+            'short_delta': 0.35,
+            'long_iv': 0.50,
+            'short_iv': 0.45,
+            'theta': -0.03
+        }
+
+  # Constraint check, are elements within accepted ranges    
+  def evaluate_position(self):
+        from pmcc_hard_param_check import evaluate_pmcc_candidates
+
+        price = self.fetch_price()
+        greeks = self.simulate_greeks()
+
+        # Build minimal mock option objects
+        class Option:
+            def __init__(self, strike, delta, iv, bid, ask, mid, theta, open_interest):
+                self.strike = strike
+                self.delta = delta
+                self.iv = iv
+                self.bid = bid
+                self.ask = ask
+                self.mid = mid
+                self.theta = theta
+                self.open_interest = open_interest
+
+        # Example simulated bid-ask + OI for test
+        long_option = Option(
+            strike=self.long_strike,
+            delta=greeks['long_delta'],
+            iv=greeks['long_iv'],
+            bid=price - 10, ask=price - 9, mid=price - 9.5, theta=0.0, open_interest=500
+        )
+
+        short_option = Option(
+            strike=self.short_strike,
+            delta=greeks['short_delta'],
+            iv=greeks['short_iv'],
+            bid=price - 2, ask=price - 1.5, mid=price - 1.75,
+            theta=greeks['theta'], open_interest=600
+        )
+
+        # Bundle into expected data structure for compatibility
+        expiration_key = self.short_exp.strftime("%Y-%m-%d")
+        long_chain = {expiration_key: [long_option]}
+        short_chain = {expiration_key: [short_option]}
+
+        # Call central evaluator
+        results = evaluate_pmcc_candidates(
+            available_long_calls_at=long_chain,
+            available_short_calls_at=short_chain,
+            expiration_date_under_consideration=expiration_key,
+            stock_price=price
+        )
+
+        # Extract result or default if none passed
+        if results:
+            best = results[0]
+            decision = f"ACCEPT: Score {best['score']}"
+            roll_note = self.roll_logic(price, greeks)
+            if roll_note:
+                decision += f" | {roll_note}"
+        else:
+            decision = "REJECT: Did not pass filters"
+
+        self.history.append({
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'stock_price': price,
+            'short_delta': greeks['short_delta'],
+            'long_delta': greeks['long_delta'],
+            'short_iv': greeks['short_iv'],
+            'long_iv': greeks['long_iv'],
+            'theta': greeks['theta'],
+            'decision': decision
+        })
+
+        return decision
+
+    def export_history(self):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"pmcc_log_{self.ticker}_{timestamp}.csv"
+        df = self.to_dataframe()
+
+        # Attach config/VIX metadata
+        config_data = {
+            'ticker': self.ticker,
+            'long_strike': self.long_strike,
+            'long_exp': self.long_exp,
+            'short_strike': self.short_strike,
+            'short_exp': self.short_exp,
+            'vix_now': vix_now,
+            'vix_date_today': vix_dates[0],
+            'vix_date_yesterday': vix_dates[1],
+            'vix_date_two_days_ago': vix_dates[2]
+        }
+        config_df = pd.DataFrame([config_data])
+        output_df = pd.concat([config_df, df], axis=1)
+
+        output_df.to_csv(filename, index=False)
+        print(f"Exported trade history to {filename}")
+
+    def to_dataframe(self):
+        return pd.DataFrame(self.history)
+
+    # Add lifecycle evaluation logic (post-acceptance)
+    def roll_logic(self, price, greeks):
+        days_to_short_exp = (self.short_exp - datetime.now()).days
+
+        # When strike has climbed past Short strike, and we are too close to expiry:
+        if (
+            greeks['short_delta'] > CONSTRAINTS["roll_max_short_delta"] and
+            days_to_short_exp < CONSTRAINTS["roll_short_dte_threshold"]
+        ):
+            return "ROLL: short delta > threshold and DTE < threshold"
+
+        # When strike price is approaching Short strike, and there are less than 2 wk to expiry
+        elif (
+            price > self.short_strike * CONSTRAINTS["roll_price_near_short_pct"] and
+            days_to_short_exp < 14
+        ):
+            return "ROLL: stock price approaching short strike"
+
+        # When strike has fallen below the Long strike
+        elif (
+            price < self.long_strike * CONSTRAINTS["exit_price_below_long_pct"]
+        ):
+            return "EXIT: stock dropped far below LEAP strike"
+
+        else:
+            return None
+
+
+
+# Example usage
+if not volatility_block_check(vix_dates, vix_now):
+    exit()
+
+if __name__ == "__main__":
+    
+    # Load VIX
+    with open("vix_data.json", "r") as f:
+        
+        vix_json = json.load(f)
+        vix_now = vix_json["vix_now"]
+        vix_dates = vix_json["vix_dates"]
+
+    # Gate upon the volatility risk
+    if not volatility_block_check(vix_dates, vix_now):
+        exit()
+      
+    # Create proper format for the position and evaluate
+    pmcc = PMCCPosition(ticker="AAPL",
+                        long_strike=150,
+                        long_exp="2025-01-17",
+                        short_strike=170,
+                        short_exp="2024-05-17")
+
+    # Run the decision making function
+    decision = pmcc.evaluate_position()
+    
+    print("Decision:", decision)
+    print(pmcc.to_dataframe().tail())
+
+    # Export to Log
+    pmcc.export_history()

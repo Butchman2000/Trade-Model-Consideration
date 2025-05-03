@@ -1,0 +1,75 @@
+# Program: pmcc_scoring (helper)
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Provides scoring logic for short-long combinations that are valid.
+
+import json
+import argparse
+
+# Load weights from JSON config if available, else use defaults
+DEFAULT_WEIGHTS = {
+    "iv_spread": 2.0,
+    "theta": 1.5,
+    "norm_dist": 1.0
+}
+
+def load_weights_from_json(path="score_weights.json"):
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+            # NOTE: This supports both flat and nested formats. If 'weights' key exists, use that.
+            return data.get("weights", data)
+    except Exception:
+        return DEFAULT_WEIGHTS
+
+# CLI weight override, if json preferred
+cli_parser = argparse.ArgumentParser()
+cli_parser.add_argument("--iv_weight", type=float, default=None)
+cli_parser.add_argument("--theta_weight", type=float, default=None)
+cli_parser.add_argument("--dist_weight", type=float, default=None)
+cli_args, _ = cli_parser.parse_known_args()
+
+WEIGHTS = load_weights_from_json()
+if cli_args.iv_weight is not None:
+    WEIGHTS["iv_spread"] = cli_args.iv_weight
+if cli_args.theta_weight is not None:
+    WEIGHTS["theta"] = cli_args.theta_weight
+if cli_args.dist_weight is not None:
+    WEIGHTS["norm_dist"] = cli_args.dist_weight
+
+# Initiate scoring function for the specific short-long arrangement under consideration
+def score_pmcc_combo(long_option, short_option, stock_price):
+    """
+    Compute a weighted score for a valid PMCC candidate.
+    Parameters:
+        long_option: an object with attributes iv, delta, etc.
+        short_option: an object with attributes iv, theta, delta, strike, etc.
+        stock_price: current price of the underlying
+    Returns:
+        float score value
+    """
+    # What is the %IV spread between the long and the nearer short?
+    iv_spread = long_option.iv - short_option.iv
+    
+    # What is the theta value of the short?
+    theta_weight = getattr(short_option, 'theta', 0.0)  # fallback if missing, is zero
+    
+    # Apply a gentle normalization.
+    dist_from_strike = short_option.strike - stock_price
+    
+    # Normalize strike distance gently to avoid outsized effects
+    norm_dist = min(max(dist_from_strike / stock_price, 0), 0.15) / 0.15
+
+    # NOTE: Future idea — compute expected IV at this strike from a fitted smile/skew surface
+    #       and use (actual_iv - expected_iv) as a premium/discount adjustment
+    #       May be very useful in pining situations, or unusual options situations.
+
+    score = (
+        WEIGHTS["iv_spread"] * iv_spread +
+        WEIGHTS["theta"] * theta_weight +
+        WEIGHTS["norm_dist"] * norm_dist
+    )
+    return score

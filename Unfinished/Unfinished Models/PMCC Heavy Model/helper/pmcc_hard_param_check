@@ -1,0 +1,62 @@
+# Program: pmcc_hard_param_check (helper)
+# Author: Brian Anderson
+# Origin Date: 02May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Run the details of the options, like bid-ask, through initial criterion
+#    /to rule out unacceptable alpha loss from bad fills.
+
+# --- Import the necessary functions, data, and variables
+
+from pmcc_scoring_helper import score_pmcc_combo
+
+# -- Instantiate constructs/constraints/variables
+
+# Placeholder: stock_price should be defined based on current market data
+stock_price = 100  # example static value; replace with dynamic fetch later
+
+
+# Define a function to evaluate valid PMCC combinations
+
+def evaluate_pmcc_candidates(available_long_calls_at,
+                             available_short_calls_at,
+                             expiration_date_under_consideration,
+                             stock_price):
+  
+    for long_option in available_long_calls_at[expiration_date_under_consideration]:
+        if not (0.60 <= long_option.delta <= 0.72):
+            continue  # skip longs out of delta range
+
+        slip_long = (long_option.ask - long_option.bid) / long_option.bid
+        if slip_long > 0.07:
+            continue  # skip illiquid long
+
+        for short_option in available_short_calls_at[expiration_date_under_consideration]:
+            if not (0.18 <= short_option.delta <= 0.35):
+                continue  # skip shorts out of delta range
+
+            slip_short = (short_option.ask - short_option.bid) / short_option.bid
+            if slip_short >= 0.04:
+                continue  # reject illiquid short
+
+            # Additional filters
+            if long_option.open_interest < 175:
+                continue  # skip long contracts with low open interest
+
+            if short_option.open_interest < 260:
+                continue  # skip short contracts with low open interest
+            iv_spread = long_option.iv - short_option.iv
+            if iv_spread < 0.05:
+                continue  # skip combos with insufficient IV spread
+
+            if short_option.mid < 1.00:
+                continue  # skip shorts with too little premium
+
+            if (short_option.strike - stock_price) < (stock_price * 0.05):
+                continue  # skip shorts too close to current stock price
+
+            # If here, candidate passes filters
+            score = score_pmcc_combo(long_option, short_option, stock_price)
+            print(f"Candidate PASSED: Long {long_option.strike}, Short {short_option.strike}, Score: {score:.3f}")
+            # Note: Capture this elsewhere, for future improvement.

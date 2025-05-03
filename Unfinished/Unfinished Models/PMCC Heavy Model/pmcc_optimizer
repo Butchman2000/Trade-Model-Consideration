@@ -1,7 +1,7 @@
 # Program: pmcc_optimizer
 # Author: Brian Anderson
 # Origin Date: 02May2025
-# Version: 1.4
+# Version: 1.6
 # 
 # Purpose:
 #    /This is the main driver and lifecycle manager for PMCC trades.
@@ -181,23 +181,40 @@ class PMCCPosition:
         else:
             return None
 
-
-
 # Example usage
-if not volatility_block_check(vix_dates, vix_now):
-    exit()
 
 if __name__ == "__main__":
     
     # Load VIX
     with open("vix_data.json", "r") as f:
         
+        # Parse contents into library
         vix_json = json.load(f)
+        # Extract from the dictionary
         vix_now = vix_json["vix_now"]
+        # Extract the triplicate list of dates
         vix_dates = vix_json["vix_dates"]
 
-    # Gate upon the volatility risk
+    # Validate the VIX data, and gate upon the volatility risk
+    if (
+        not isinstance(vix_dates, list) or     # evaluate
+        len(vix_dates) != 3 or                 # there must be 3 dates in list
+        not all(isinstance(v, (float, int)) for v in vix_dates)
+    ):
+        print("VIX data incomplete or invalid. Trading logic aborted.")
+        with open("pmcc_skipped_log.csv", "a") as logf:
+            logf.write(f"{datetime.now().isoformat()},SKIPPED: invalid VIX data ")
+        exit()
+
+    if vix_now > 40:
+        print(f"VIX too high ({vix_now}). Trading logic aborted.")
+        with open("pmcc_skipped_log.csv", "a") as logf:
+            logf.write(f"{datetime.now().isoformat()},SKIPPED: VIX too high ({vix_now}) ")
+        exit()
+
     if not volatility_block_check(vix_dates, vix_now):
+        with open("pmcc_skipped_log.csv", "a") as logf:
+            logf.write(f"{datetime.now().isoformat()},SKIPPED: volatility block triggered ")
         exit()
       
     # Create proper format for the position and evaluate

@@ -1,0 +1,147 @@
+# Program: synthetic_long_model
+# Author: Brian Anderson
+# Origin Date: 03May2025
+# Version: 1.2
+#
+# Purpose:
+#    /This analyzes the options region near current strike of a specific stock,
+#    /provides a selection of most optimal price strikes where the synthetic long
+#    /will have the most multiplicative benefit
+
+import argparse
+import json
+from datetime import datetime
+from helper.exclusion_dates import is_exclusion_time  # Periods of time to avoid action
+from market.data import get_option_chain, get_price_data  # Stub functions
+from strategy.synthetic import build_synthetic_long, evaluate_pnl  # Strategy logic
+
+from config.constraints import CONSTRAINT_SLIPPAGE, CONSTRAINT_RISK_POLICY, RISK_POLICY_VERSION
+
+CONSTRAINTS = {
+    # DO NOT ALTER THIS STRUCTURE.
+    # This dictionary holds placeholder arrays ONLY.
+    # It is used for injecting backtest data, and MUST be assigned externally.
+    # Editing or extending keys here will break gating logic and decay models.
+
+    # Placeholder arrays for testing and backtesting purposes only.
+    # These should be populated by the data pipeline or manually injected.
+    "volume_series": [],            # e.g., [10500, 11200, 8500, ...]
+    "time_series": [],             # e.g., [datetime(...), datetime(...), ...]
+    "flag_timestamps": []          # e.g., [datetime(...), datetime(...)] from prior triggers
+}
+
+
+# Gate the risk involved currently
+# NOTE: For future enhancement, consider adding code integrity check:
+# import hashlib and log a SHA-256 of this module for traceable audits.
+# Optional example: hashlib.sha256(open(__file__, 'rb').read()).hexdigest()
+def passes_risk_gating(pnl, net_debit):
+    if pnl < CONSTRAINT_RISK_POLICY['min_pnl_edge']:
+        return False
+    if net_debit > CONSTRAINT_RISK_POLICY['max_net_debit']:
+        return False
+    return True
+
+  
+def run_strategy(ticker, date, live=False, output_path=None):
+
+    # ----------------------------------------------------------------------------------
+    # Introduce the new cooldown logic, and gating details for flags and actions to take
+        
+    from helper.cooldown_flag_logic import flag_decay_weighting
+    from helper.abc import risk_gates_flags_actions
+
+    # Placeholder for historical volume, timestamps, and flag timestamps
+    volume_series = CONSTRAINTS["volume_series"]        # TODO: load actual recent volume data here
+    time_series = CONSTRAINTS["time_series"]          # TODO: matching datetime series
+    flag_timestamps = CONSTRAINTS["flag_timestamps"]      # TODO: load prior flag timestamps if any
+
+    decay_status = flag_decay_weighting(volume_series, time_series, flag_timestamps, ticker)
+    # NOTE: Risk check must occur after synthetic and pnl are defined
+    # Previous: risk_status = risk_gates_flags_actions(ticker)  # Adjust args if needed
+    risk_status = None  # Adjust args if needed
+
+    # The following code, for my own understanding, is an expansion of:
+    #    /if not (decay_status["buy_permission"] and risk_status.get("trade_allowed", True)):
+    
+    buy_permission_from_decay = decay_status["buy_permission"]
+    # Removed early risk_status access; defer until after risk_status is defined
+    # trade_permission_from_risk = risk_status.get("trade_allowed", True)
+
+    # Combined gate logic — only allow trade if both are true
+    # Previous: if not (buy_permission_from_decay and trade_permission_from_risk):
+    
+    # Delayed risk_status integration — skip risk gate until later
+    if not buy_permission_from_decay:
+        print("Trade skipped due to: decay or risk logic")
+        return {
+            "status": "skipped",
+            "reason": "gated by decay or risk logic",
+            "decay_status": decay_status,
+            "risk_status": risk_status
+        }
+
+    # ----------------------------------------------------------------------------------
+ 
+    
+    if is_exclusion_time(date):
+        return {"status": "skipped", "reason": "blackout window"}
+
+    price_data = get_price_data(ticker, date, live=live)
+    options_data = get_option_chain(ticker, date, live=live)
+
+    synthetic = build_synthetic_long(price_data, options_data)
+    pnl = evaluate_pnl(synthetic, price_data)
+
+    # Now that synthetic and pnl are ready, perform actual risk gate check
+    from helper.abc import risk_gates_flags_actions  # Reinforce import here for clarity
+    risk_status = risk_gates_flags_actions(
+        ticker=ticker,
+        pnl=pnl,
+        net_debit=synthetic["net_debit"],
+        date=date
+    )
+
+    trade_permission_from_risk = risk_status.get("trade_allowed", True)
+    if not trade_permission_from_risk:
+        print("Trade skipped due to: risk logic (post-synthetic check)")
+        return {
+            "status": "skipped",
+            "reason": "risk logic blocked entry",
+            "risk_status": risk_status
+        }
+
+    if not passes_risk_gating(pnl, synthetic["net_debit"]):
+        return {"status": "skipped", "reason": "did not meet the risk thresholds"}
+    # Can evolve later into:
+    #    /max allowed margin usage
+    #    /skip thade if prior loss streak occurs
+    #    /context-aware volatility limits
+
+    result = {
+    "timestamp": datetime.utcnow().isoformat(),
+    "ticker": ticker,
+    "date": str(date),
+    "pnl": pnl,
+    "details": synthetic,
+    "slippage_per_leg": CONSTRAINT_SLIPPAGE['slippage_per_leg'],
+    "net_debit": synthetic["net_debit"],
+    "risk_policy_version": RISK_POLICY_VERSION
+    }
+
+    if output_path:
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+    return result
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("ticker")
+    parser.add_argument("date")
+    parser.add_argument("--live", action="store_true")
+    parser.add_argument("--output", help="Path to output JSON")
+    args = parser.parse_args()
+
+    out = run_strategy(args.ticker, args.date, args.live, args.output)
+    print(json.dumps(out, indent=2))

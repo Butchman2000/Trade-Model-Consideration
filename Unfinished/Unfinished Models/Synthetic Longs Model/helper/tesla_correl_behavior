@@ -1,0 +1,227 @@
+# Program: tesla_correl_behavior (helper)
+# Author: Brian Anderson
+# Origin Date: 04May2025
+# Version: 1.1
+# 
+# Purpose:
+#    /Collection of notes for the Tesla IV and volume disjunction evaluations.
+#    /One or more functions from here may have been incorporated elsewhere.
+#    /There is no need to act anything in this program.
+
+
+"""
+Rapid IV swings or cycling – no code currently looks at minute-to-minute IV shifts.
+
+This note outlines the design for:
+- A rolling reference frame to track recent implied volatility (IV) values
+- Logic to evaluate IV swings and cycling behavior (up/down oscillation)
+- Logging system to flag and store high-disjunction volume events
+
+Volume Disjunction Triggers: (see function below -- detect_volume_disjunctions)
+- Volume is > 1.8x the previous candle
+- OR volume is > 2.3x a weighted average of the prior 2 candles:
+    (vol[-2] * 2 + vol[-3] * 1.5) / 3.5
+- OR volume is > 2.1x the geometric average of the prior 3–4 candles
+
+These events will be timestamped (rounded to nearest minute) and stored for analysis.
+
+Expected Behavior on Non-Exclusion Days:
+- 5 to 10 volume swings per day 
+- 3 or 4 IV swings per day
+- Most swings occur in the first hour, a few more by midday, and some near close
+- Volume generally follows a rough downward-trending cup-and-handle pattern
+- Volume disjunctions are most common during the morning session
+
+Next Step:
+Implement: detect_iv_cycling() and detect_volume_disjunctions() as callable utilities.
+"""
+
+import numpy as np
+from datetime import datetime
+
+def detect_iv_cycling(iv_series, window=5, threshold=0.08):
+    """
+    Detects IV cycling by measuring rapid changes within a rolling window.
+    Args:
+        iv_series (list of float): historical IV readings
+        window (int): number of periods to look back
+        threshold (float): minimum percent change to flag
+    Returns:
+        dict with cycling_detected (bool), swing_count (int), recent_change (float)
+    """
+    if len(iv_series) < window + 2:
+        return {"cycling_detected": False}
+
+    swings = 0
+    for i in range(-window, -1):
+        change = abs(iv_series[i+1] - iv_series[i]) / max(iv_series[i], 1e-6)
+        if change > threshold:
+            swings += 1
+
+    return {
+        "cycling_detected": swings >= 2,
+        "swing_count": swings,
+        "recent_change": iv_series[-1] - iv_series[-2]
+    }
+
+'''
+#---
+# Effect of jumps in volume and IV on synthetic longs--
+#
+# Cost of synthetics:
+# -if disjunctions are found, due to implied risk/volatility, the
+# pricing of both puts and calls climbs, pricing in expected movement
+#
+# Edge compression:
+# -edge between theor. vs market price shrinks--harder to justify entry
+#
+# Skew distortion:
+# -high v creates skew (puts more expensive than calls), leading to synthetic imbalance,
+# wherein short put carries greater margin and risk
+#
+# Profitability risk:
+# -theta decay accelerates in high IV, but so does vega exposure
+# -if, after entry, IV reverts, position loses value even if direction is correct
+# Danger! if IV jumped on news and price doesnt follow through, paying for nothing
+#
+# Volume surges:
+# -high volume marks inflection points, like breakouts or traps
+# -entering a position during disjuntion means buying volatility at the peak
+# -only enter after a pause or a stabilization
+#---
+'''
+
+
+# ---
+# Next function enhances detection of volume bursts with a hint to reduce position sizing
+# ---
+
+def detect_volume_disjunctions(vol_series, time_series):
+    """
+    Detects abnormal volume bursts using multiple methods.
+    Args:
+        vol_series (list of float): recent volume values
+        time_series (list of datetime): matching timestamps
+    Returns:
+        list of tuples: (timestamp, reason)
+    """
+    if len(vol_series) < 5 or len(vol_series) != len(time_series):
+        return []
+
+    flags = []
+    for i in range(4, len(vol_series)):
+        prev = vol_series[i - 1]
+        w_avg = (vol_series[i - 2] * 2 + vol_series[i - 3] * 1.5) / 3.5
+        g_avg = (np.prod(vol_series[i - 4:i - 1])) ** (1/3.0)
+        current = vol_series[i]
+
+        # If volume is > 1.8x the previous candle
+        if current > 1.8 * prev:
+            flags.append((time_series[i], ">1.8x previous"))
+        # or if volume is > 2.3x a weighted average of the prior 2 candles: 
+        # (vol[-2] * 2 + vol[-3] * 1.5) / 3.5
+        elif current > 2.3 * w_avg:
+            flags.append((time_series[i], ">2.3x weighted avg"))
+        # or if volume is > 2.1x the geometric average of the prior 3–4 candles  
+        elif current > 2.1 * g_avg:
+            flags.append((time_series[i], ">2.1x geometric avg"))
+
+    return {
+        "disjunctions": flags,
+        "recommend_reduce_position": len(flags) > 0
+    }
+
+'''
+# ---
+# Flag Dampening Models (notes only)
+#
+# This block outlines three methods for reducing the influence of prior flags:
+#
+# 1. Exponential Decay Model:
+#    weight = initial_weight * exp(-k * time_since_flag)
+#    Allows quick fade of impact over time (fast at first, slower later)
+#
+# 2. Half-Life Model:
+#    weight = 0.5 ** (elapsed_time / half_life)
+#    Interpretability benefit: "after X minutes, impact halves"
+#
+# 3. Linear Fade:
+#    weight = max(0, 1 - elapsed_time / window)
+#    Simple and direct, decays at fixed rate until zero
+#
+# Each model may be used to adjust entry sizing, flag severity, or risk gating.
+# ---
+'''
+
+int number_red_initiations = 0
+str flag_of_concern = []
+
+def flag_decay_weighting(volume_series, time_series, flags):
+
+    most_recent_flag = (00,00,00,00,00)
+    buy_permission_synth_long_{ticker} = True
+    for i in (1,len(flags))
+        # time_marker = {date.time} in (%yy,%mm,%dd,%hh,%mm)  #no need for tuples, so I will simplify
+        time_marker = datatime.now()
+        current_time_flag = datetime.now(flags(i)) - modulo.minutes(flags(i))
+        if current_time_flag > most_recent_flag
+            most_recent_flag = current_time_flag
+
+    # current_time = get.global(time(%yy,%mm,%dd,%hh,%mm))
+    # time_since_most_recent_flag = (00,00,00,00,00)
+    current_time = datetime.now()
+    delta = datetime.now() - most_recent_flag
+    delta_minutes = delta.total_seconds() / 60
+
+    if delta_minutes >= (00,00,02,00,00):
+        flag_of_concern = 'yellow'  #last flag yesterday or farther
+    elif delta_minutes < (0,00,02,00,00) and
+          ((most_recent_flag - current_time) >= (00,00,11,00)):
+        flag_of_concern = 'orange'  #last flag was in yesterdays market for sure
+    elif delta_minutes < (00,00,00,11,00):
+        flag_of_concern = 'red'
+        number_red_initiations = number_red_initiations + 1
+        if number_red_initiations > 5:
+            buy_permission_synth_long_{ticker} = False
+        # if we have a synthetic position,
+        # print(f" DANGER. {ticker} volume and/or IV movement too high to open synthetic longs today.)
+        # active_flags.append(current_time_flag, flag_of_concern, number_red_initiations) ?
+        # make json note for audit or something)
+        
+    if flag_of_concern == 'orange':
+        #take precautionary action, such as reducing the thresholds for flag noting
+    if flag_of_concern == 'red'  #proceed to cool off
+        weight_exponential()
+        weight_halflife()
+        weight_linfade()
+        # here, put comparisons and conditionals
+        # make a decision
+        # flag and notify and log
+        #...
+        # TODO list
+
+tsmrf_minutes = convert.minutes(time_since_most_recent_flag)  # time in minutes since most recent flag
+
+def weight_exponential():
+    int k_coeff = 6
+    weight_exponential = initial_weight * exp(-k_coeff * tsmrf_minutes)
+    # do something conditional
+    # log something
+    # ...
+    # TODO list
+
+def weight_halflife():
+    halflife_minutes = 15
+    weight_halflife = 0.5 ** (tsmrf_minutes / halflife_minutes)
+    # do something conditional
+    # log something
+    # ...
+    # TODO list
+  
+def weight_linfade():
+    fade_window = 20
+    weight_linfade = max(0, ( (1-tsmrf_minutes) / fade_window))
+    # do something conditional
+    # log something
+    # ...
+    # TODO list

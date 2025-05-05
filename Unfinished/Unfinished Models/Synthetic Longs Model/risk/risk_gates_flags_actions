@@ -1,0 +1,204 @@
+# Module: risk_gates_flags_actions (risk)
+# Author: Brian Anderson
+# Origin Date: 03May2025
+# Version: 1.7
+#
+# Purpose:
+#    /Define evolving, configurable rules for risk gating synthetic long entries
+
+"""
+This module program enables static gating logic, to become context-aware, policy-driven decisions:
+
+Handles:
+- Context-aware volatility caps (VIX, HV)
+- Trade ratio guards (net_debit / pnl)
+- Multi-loss triggers
+- Daily loss containment
+- Session risk modifiers
+- Placeholder for AI/NN overrides
+
+This logic will be reviewed or adjusted in live or test phase. These gates are structured
+for scaling by capital tier. As capital increases, tighter risk tolerances are allowed.
+In smaller accounts, thresholds are more permissive to allow learning, error, and margin for
+execution noise or platform anomalies.
+"""
+
+'''
+# --- HAS BEEN MOVED TO CONSTRAINTS_CONFIG ---
+
+# Consolidated constraint block for per-trade filters
+CONSTRAINT_RISK_POLICY = {
+    'min_pnl_edge': 1.00,
+    'max_net_debit': 25.00,
+    'max_margin_to_edge_ratio': 12.0,
+    'cooldown_after_loss_streak': 3,
+    'max_vix': 30
+}
+'''
+from config.constraints import CONSTRAINT_RISK_POLICY
+
+# Dynamically scales threshold percentages based on account size tier
+# Looser tolerance for smaller accounts; tighter discipline for larger balances
+def get_dynamic_risk_thresholds(account_balance):
+    if account_balance < 25000:
+        return {'daily_shutoff_pct': 0.08, 'single_loss_pct': 0.35, 'total_loss_pct': 0.50}
+    elif account_balance < 50000:
+        return {'daily_shutoff_pct': 0.06, 'single_loss_pct': 0.30, 'total_loss_pct': 0.45}
+    elif account_balance < 100000:
+        return {'daily_shutoff_pct': 0.05, 'single_loss_pct': 0.28, 'total_loss_pct': 0.42}
+    elif account_balance < 250000:
+        return {'daily_shutoff_pct': 0.035, 'single_loss_pct': 0.25, 'total_loss_pct': 0.40}
+    else:
+        return {'daily_shutoff_pct': 0.025, 'single_loss_pct': 0.22, 'total_loss_pct': 0.38}
+
+# Basic per-trade entry guard to filter out thin or dangerous setups
+def passes_evolving_risk_gate(pnl, net_debit, vix=None):
+    if pnl < CONSTRAINT_RISK_POLICY['min_pnl_edge']:
+        return False
+
+    if net_debit > CONSTRAINT_RISK_POLICY['max_net_debit']:
+        return False
+
+    ratio = net_debit / pnl if pnl > 0 else float('inf')
+    if ratio > CONSTRAINT_RISK_POLICY['max_margin_to_edge_ratio']:
+        return False
+
+    if vix is not None and vix > CONSTRAINT_RISK_POLICY['max_vix']:
+        return False
+
+    return True
+
+"""
+DAILY & SESSION-BASED LOSS RULES
+
+Inputs needed:
+- account_balance_at_open
+- apportioned_chunk_for_synthetics
+- synthetic_trade_log (list of trade PnLs with timestamps)
+
+Derived flags:
+- trade_failure_pct_daily_shutout: True if total daily synthetic loss exceeds dynamic threshold
+- too_many_failures_in_day: True if 2 to 3 synthetic failures in one day
+- yellow_flag_cap_synthetics: Triggered if one loss > dynamic threshold of synthetic allocation
+- red_flag_shutdown_day: Triggered if sum of daily synthetic losses > dynamic threshold of allocation
+- red_flag_shutdown_window: Triggered if >2% drop within 2 hours of first trade
+- yellow_flag_streak: Triggered by 3 consecutive synthetic trade losses
+- yellow_flag_prev_day: If prior day net loss >30% of previous synthetic allocation
+
+# NOTE: placeholder for future auto unwind / AI override action when red flags triggered
+"""
+
+def evaluate_daily_and_session_risk_flags(account_balance_at_open, apportioned_chunk, trade_log):
+    # Initialize flag structure
+    flags = {
+        'trade_failure_pct_daily_shutout': False,
+        'too_many_failures_in_day': False,
+        'yellow_flag_cap_synthetics': False,
+        'red_flag_shutdown_day': False,
+        'red_flag_shutdown_window': False,
+        'yellow_flag_streak': False,
+        'yellow_flag_prev_day': False,
+        'signal_to_cut_synthetic': False
+    }
+
+    # Prepare evaluation context
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    thresholds = get_dynamic_risk_thresholds(account_balance_at_open)
+
+    # Initialize counters and trackers
+    dominant_losses_today = []
+    failure_count = 0
+    recent_loss_streak = 0
+    unrealized_losses = []
+
+    # Iterate through trades and evaluate per-trade impact
+    for trade in trade_log:
+        pnl = trade.get('realized_pnl', 0)
+        unrealized = trade.get('unrealized_pnl', 0)
+        timestamp = trade.get('timestamp')
+
+        # Identify worst-case of realized/unrealized loss
+        if pnl < 0 or unrealized < 0:
+            dominant_loss = min(pnl, unrealized)
+        else:
+            dominant_loss = max(pnl, unrealized)
+
+        # Count total failures and streaks
+        if dominant_loss < 0:
+            failure_count += 1
+            recent_loss_streak += 1
+        else:
+            recent_loss_streak = 0
+
+        # Track today's synthetic losses
+        if trade.get('is_today'):
+            dominant_losses_today.append(dominant_loss)
+
+        # Tag open trades with worse unrealized risk than realized
+        if trade.get('is_open') and abs(unrealized) > abs(pnl):
+            unrealized_losses.append(unrealized)
+
+        # If one synthetic loss is too large relative to allocation, issue yellow flag
+        if abs(dominant_loss) > thresholds['single_loss_pct'] * apportioned_chunk:
+            flags['yellow_flag_cap_synthetics'] = True
+
+        # Trigger 2-hour red flag if sharp drawdown occurs in short window
+        if trade.get('is_today') and trade.get('timestamp'):
+            if trade['timestamp'] >= (now - timedelta(hours=2)) and abs(dominant_loss) > 0.02 * account_balance_at_open:
+                flags['red_flag_shutdown_window'] = True
+
+    # Evaluate total daily loss and apply threshold
+    total_dominant_loss = sum([loss for loss in dominant_losses_today if loss < 0])
+    if abs(round(total_dominant_loss, -1)) > thresholds['daily_shutoff_pct'] * account_balance_at_open:
+        flags['trade_failure_pct_daily_shutout'] = True
+
+    # Trigger 'too many failures' if between 2 and 3 trades lost today
+    if 2 <= failure_count < 4:
+        flags['too_many_failures_in_day'] = True
+
+    # Shutdown all synthetic entries if total drawdown exceeds hard policy threshold
+    if abs(total_dominant_loss) > thresholds['total_loss_pct'] * apportioned_chunk:
+        flags['red_flag_shutdown_day'] = True
+        flags['signal_to_cut_synthetic'] = True
+
+    # Track if there is an active loss streak of 3 or more
+    if recent_loss_streak >= 3:
+        flags['yellow_flag_streak'] = True
+
+    # Evaluate prior day's total losses against allowed policy
+    prior_day_loss = sum(
+        t.get('realized_pnl', 0) for t in trade_log if t.get('is_yesterday')
+    )
+    if abs(prior_day_loss) > 0.30 * apportioned_chunk:
+        flags['yellow_flag_prev_day'] = True
+
+    # Now it is time to pass along reason, flags, and trade_allowed
+    notifications = []
+    reason = "risk policy passed"
+    trade_allowed = True
+
+    # When we have a red flag today, or we have shutdown action:
+    if flags['red_flag_shutdown_day'] or flags['red_flag_shutdown_window']:
+        trade_allowed = False
+        reason = "Red flag triggered: risk shutdown"
+        notifications.append(reason)
+    
+    # When we have shutout trading due to breeching daily failure percent
+    elif flags['trade_failure_pct_daily_shutout']:
+        trade_allowed = False
+        reason = "Daily synthetic drawdown exceeded"
+        notifications.append(reason)
+    
+    # We will pass along yellow flags as well
+    elif any([
+        flags['yellow_flag_cap_synthetics'],
+        flags['yellow_flag_streak'],
+        flags['yellow_flag_prev_day']
+    ]):
+        
+        trade_allowed = True  # Otherwise, we are alright and can proceed to trade
+        reason = "Caution: yellow flag active"
+        notifications.append(reason)
+  
+    return flags, trade_allowed, reason, notifications

@@ -1,0 +1,100 @@
+# Program: cooldown_flag_logic (helper)
+# Author: Brian Anderson
+# Origin Date: 03May2025
+# Version: 1.1
+#
+# Purpose:
+#    /Assists in assigning weighing of color-warnings of flags.
+#    /Introduces cool-off functions, that need further development, in order to implement.
+
+# Revised with cleanup suggestions - all removed lines commented with (C.del)
+from datetime import datetime  # Added for datetime handling
+
+# int number_red_initiations = 0  (C.del)
+number_red_initiations = 0
+
+# str flag_of_concern = []  (C.del)
+flag_of_concern = []
+
+
+def flag_decay_weighting(volume_series, time_series, flags):
+
+    # most_recent_flag = (00,00,00,00,00)  (C.del)
+    most_recent_flag = datetime.min
+
+    # buy_permission_synth_long_{ticker} = True  (C.del)
+    buy_permission = True  # replaced with a clean flag variable
+
+    # for i in (1,len(flags))  (C.del)
+    for i in range(len(flags)):
+        # time_marker = {date.time} in (%yy,%mm,%dd,%hh,%mm)  #no need for tuples, so I will simplify  (C.del)
+        time_marker = datetime.now()
+
+        # current_time_flag = datetime.now(flags(i)) - modulo.minutes(flags(i))  (C.del)
+        current_time_flag = flags[i]  # assuming flags is a list of datetime objects
+
+        if current_time_flag > most_recent_flag:
+            most_recent_flag = current_time_flag
+
+    # current_time = get.global(time(%yy,%mm,%dd,%hh,%mm))  (C.del)
+    # time_since_most_recent_flag = (00,00,00,00,00)  (C.del)
+    current_time = datetime.now()
+    delta = current_time - most_recent_flag
+    delta_minutes = delta.total_seconds() / 60
+
+    # if delta_minutes >= (00,00,02,00,00):  (C.del)
+    if delta_minutes >= 120:
+        flag_of_concern = 'yellow'
+
+    # elif delta_minutes < (0,00,02,00,00) and ((most_recent_flag - current_time) >= (00,00,11,00)):  (C.del)
+    elif 60 <= delta_minutes < 120:
+        flag_of_concern = 'orange'
+
+    # elif delta_minutes < (00,00,00,11,00):  (C.del)
+    elif delta_minutes < 60:
+        flag_of_concern = 'red'
+        number_red_initiations += 1
+
+        if number_red_initiations > 5:
+            buy_permission = False
+        # print(f" DANGER. {ticker} volume and/or IV movement too high to open synthetic longs today.)  (C.del)
+        # active_flags.append(current_time_flag, flag_of_concern, number_red_initiations) ?  (C.del)
+        # make json note for audit or something)  (C.del)
+
+    if flag_of_concern == 'orange':
+        pass  # precautionary actions go here
+
+    # if flag_of_concern == 'red'  #proceed to cool off  (C.del)
+    if flag_of_concern == 'red':
+        weight_exponential()
+        weight_halflife()
+        weight_linfade()
+        # here, put comparisons and conditionals
+        # make a decision
+        # flag and notify and log
+
+    # tsmrf_minutes = convert.minutes(time_since_most_recent_flag)  (C.del)
+    tsmrf_minutes = delta_minutes  # clean replacement
+
+
+def weight_exponential():
+    # int k_coeff = 6  (C.del)
+    k_coeff = 6
+    initial_weight = 1.0  # assumed
+    weight_exponential = initial_weight * np.exp(-k_coeff * tsmrf_minutes)
+    # do something conditional
+    # log something
+
+
+def weight_halflife():
+    halflife_minutes = 15
+    weight_halflife = 0.5 ** (tsmrf_minutes / halflife_minutes)
+    # do something conditional
+    # log something
+
+
+def weight_linfade():
+    fade_window = 20
+    weight_linfade = max(0, (1 - (tsmrf_minutes / fade_window)))
+    # do something conditional
+    # log something

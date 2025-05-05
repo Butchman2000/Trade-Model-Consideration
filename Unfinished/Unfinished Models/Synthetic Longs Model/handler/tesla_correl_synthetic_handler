@@ -1,0 +1,143 @@
+# Program: tesla_correl_synthetic_handler (handler)
+# Author: Brian Anderson
+# Origion: 03May2025
+# Version: 1.1
+#
+# Purpose: Define any Tesla-specific strategy logic, filters, or overrides.
+
+"""
+This module is used to apply specialized logic for TSLA, which may behave differently
+than general synthetic strategies due to:
+- Higher-than-average IV
+- Large gamma events
+- Post-split behavior
+- Correlated sentiment with macro catalysts (e.g. rate hikes, tech earnings)
+
+It also contains early market logic for short setups based on open dips and volatility behavior.
+This logic is conditionally triggered when:
+- ticker == 'TSLA', or
+- ticker is in tsla_correlated[]
+"""
+
+TESLA_RULES = {
+    "min_iv": 40.0,
+    "max_net_debit": 35.00,
+    "allow_extended_range": True,
+    "flag_for_review_if_open_interest_low": True
+}
+
+# Stocks that behave in correlated fashion to TSLA price action, often due to EV-sector, risk-on profiles
+tsla_correlated = ["NIO", "LCID", "RIVN", "ARKK"]  # placeholder example list
+
+
+def is_tsla_or_related(ticker):
+    return ticker.upper() == "TSLA" or ticker.upper() in tsla_correlated
+
+
+def apply_tesla_overrides(price_data, options_data, synthetic):
+    """
+    Evaluate overrides or annotations for TSLA setups
+    """
+    notes = []
+
+    if price_data.get("implied_volatility", 0) < TESLA_RULES['min_iv']:
+        notes.append("IV below historical mean threshold for TSLA")
+
+    if synthetic['net_debit'] > TESLA_RULES['max_net_debit']:
+        notes.append("Net debit exceeds Tesla-specific limit")
+
+    low_oi_warning = any(opt.get("open_interest", 1000) < 50 for opt in options_data)
+    if TESLA_RULES['flag_for_review_if_open_interest_low'] and low_oi_warning:
+        notes.append("Low open interest detected on one or more legs")
+
+    return {
+        "notes": notes,
+        "override_flags": {
+            "skip": len(notes) > 1,
+            "watch": "IV" in notes[0] if notes else False
+        }
+    }
+
+
+"""
+PREMARKET AND EARLY MARKET OPEN SCANNER FOR SHORT SETUPS
+
+Conditions observed:
+- Large pre-market spike or fade
+- > 4–5% drop post-open often creates a dip-buyable setup
+- Rapid IV swings or cycling (up/down in short bursts)
+- Long bottom wicks on 1m candles signal base formation before reversal
+
+Future Enhancements:
+- Add volume change logic
+- Monitor for options pinning near key strikes
+- Evaluate unusual order flow, open interest anomalies
+"""
+
+def analyze_open_behavior(minute_candles, threshold_pct=4.5):
+    """
+    Analyze Tesla (or correlated) early open behavior for synthetic short setups.
+    Detail: Often there is a multiple percent drop, as hedges and stop losses and others unroll,
+            and then we see a sort of cup like bottom, and retracement of a few percent.
+            The options are somewhat priced in, but if we can accurately detect the morning swing,
+            then there is value to be had. Sometimes there are hints in the one minute candles,
+            like the wicks that belcome longer, for the handful of candles on the cup's bottom.
+    Args:
+        minute_candles (list): list of dicts with keys: 'timestamp', 'open', 'high', 'low', 'close'
+        threshold_pct (float): percent drop from open to low to consider significant
+
+    Returns:
+        dict: Flags and notes about price behavior
+    """
+    if not minute_candles or len(minute_candles) < 10:
+        return {"pattern": "insufficient data", "flag": False}
+
+    open_price = minute_candles[0]['open']
+    lows = [bar['low'] for bar in minute_candles[:15]]  # first 15 minutes
+    lowest = min(lows)
+
+    percent_drop = ((open_price - lowest) / open_price) * 100
+    flag = percent_drop >= threshold_pct
+
+    # Optional: detect bottom wicks forming repeatedly
+    long_wick_count = sum(
+        (bar['open'] - bar['low']) > 0.5 * (bar['high'] - bar['low']) for bar in minute_candles[:10]
+    )
+
+    notes = []
+    if flag:
+        notes.append(f"Early drop of {percent_drop:.2f}% detected.")
+    if long_wick_count >= 3:
+        notes.append("Multiple long bottom wicks suggest dip forming.")
+
+    # Volume pattern detection (see below)
+    if detect_volume_spike(minute_candles):
+        notes.append("Volume spike during early drop suggests real selling pressure.")
+
+    return {
+        "pattern": "early_open_drop",
+        "flag": flag,
+        "percent_drop": round(percent_drop, 2),
+        "long_wicks": long_wick_count,
+        "notes": notes
+    }
+
+'''
+Function: detection_volume_spike
+
+This function evaluates early volume spikes as potential confirmation of rapid selling.
+It takes the first 15 minutes of candle volume and compares each to the average of the first 5.
+If 3 or more candles exceed a multiplier of the baseline, it confirms strong participation.
+This helps distinguish real pressure from shallow or fake-out dips.
+Future versions might weight by VWAP or consider pre-market continuation.
+'''
+
+def detect_volume_spike(minute_candles, multiplier=1.8):
+    volumes = [bar.get('volume', 0) for bar in minute_candles[:15]]
+    if len(volumes) < 5:
+        return False
+
+    avg_volume = sum(volumes[:5]) / 5
+    spike_count = sum(1 for v in volumes if v > multiplier * avg_volume)
+
+    return spike_count >= 3

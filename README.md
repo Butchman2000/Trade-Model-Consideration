@@ -57,5 +57,10 @@ Some logic may pause until an external reviewer approves a file. The flag must f
 This is intended to simulate a change control step prior to the continuation of risk-sensitive operations.
 
 
-This is intended to simulate a change control step prior to the continuation of risk-sensitive operations.
+# Third-Party Software Attribution
+
+This project may incorporate components from the open-source project TradingGym, available at https://github.com/Yvictor/TradingGym, which is licensed under the MIT License.
+All modifications and proprietary models developed on top of this framework are original works and remain the intellectual property of Brian Anderson, or Jade Harbor, possibly dba Jade Harbor Finance, or assigns.
+Backtesting may be done with TradingGym components, yet that remains to be seen.
+
 

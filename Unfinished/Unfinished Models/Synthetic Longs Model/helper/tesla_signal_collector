@@ -1,0 +1,45 @@
+# Program: tesla_signal_collector (helper)
+# Author: Brian Anderson
+# Origin Date: 03May2025
+# Version: 1.0
+#
+# Purpose:
+#    /This is a central handler to coordinate TSLA signal analysis and audit packaging
+
+"""
+This module unifies the Tesla-specific checks:
+- apply_tesla_overrides
+- analyze_open_behavior
+
+It collects notes, flags, and metrics into a single response
+for logging or decision support in Synthetic Trader.
+"""
+
+from tesla_special_handler import (
+    is_tsla_or_related,
+    apply_tesla_overrides,
+    analyze_open_behavior
+)
+
+def collect_tesla_signals(ticker, price_data, options_data, synthetic, minute_candles):
+    """
+    Run TSLA-related checks and return consolidated signal package.
+    """
+    if not is_tsla_or_related(ticker):
+        return None
+
+    signals = {
+        "notes": [],
+        "override_flags": {},
+        "open_behavior": {},
+        "ticker": ticker,
+    }
+
+    override = apply_tesla_overrides(price_data, options_data, synthetic)
+    behavior = analyze_open_behavior(minute_candles)
+
+    signals["notes"].extend(override.get("notes", []))
+    signals["override_flags"] = override.get("override_flags", {})
+    signals["open_behavior"] = behavior
+
+    return signals

@@ -1,7 +1,7 @@
 # Program: synthetic_long_model
 # Author: Brian Anderson
 # Origin Date: 03May2025
-# Version: 1.2
+# Version: 1.3
 #
 # Purpose:
 #    /This analyzes the options region near current strike of a specific stock,
@@ -17,24 +17,32 @@ from strategy.synthetic import build_synthetic_long, evaluate_pnl  # Strategy lo
 
 from config.constraints import CONSTRAINT_SLIPPAGE, CONSTRAINT_RISK_POLICY, RISK_POLICY_VERSION
 
-CONSTRAINTS = {
-    # DO NOT ALTER THIS STRUCTURE.
-    # This dictionary holds placeholder arrays ONLY.
-    # It is used for injecting backtest data, and MUST be assigned externally.
-    # Editing or extending keys here will break gating logic and decay models.
+# DO NOT ALTER THIS STRUCTURE.
+# This dictionary holds placeholder arrays ONLY.
+# It is used for injecting backtest data, and MUST be assigned externally.
+# Editing or extending keys here will break gating logic and decay models.
 
-    # Placeholder arrays for testing and backtesting purposes only.
-    # These should be populated by the data pipeline or manually injected.
-    "volume_series": [],            # e.g., [10500, 11200, 8500, ...]
-    "time_series": [],             # e.g., [datetime(...), datetime(...), ...]
-    "flag_timestamps": []          # e.g., [datetime(...), datetime(...)] from prior triggers
-}
+# Moved placeholder series structure to central config module
+from config.constraints import PLACEHOLDER_SERIES as CONSTRAINTS
+
+# --- Region below is for quick manual testing of logic and operation
+manual_test = True
+if manual_test:
+    
+    from datetime import timedelta
+    
+    # Inject mock data into placeholder series
+    now = datetime.utcnow()
+    CONSTRAINTS["volume_series"] = [1000, 1500, 2400, 800, 1200]
+    CONSTRAINTS["time_series"] = [now - timedelta(minutes=i*5) for i in range(5)]
+    CONSTRAINTS["flag_timestamps"] = [now - timedelta(minutes=30), now - timedelta(minutes=10)]
+
+    # IF YOU WANT TO FORCE A TRADE FOR VISIBILITY
+    # CONSTRAINTS["flag_timestamps"] = []  # this disables gating
+
+# --- Conludes end of region of manual testing
 
 
-# Gate the risk involved currently
-# NOTE: For future enhancement, consider adding code integrity check:
-# import hashlib and log a SHA-256 of this module for traceable audits.
-# Optional example: hashlib.sha256(open(__file__, 'rb').read()).hexdigest()
 def passes_risk_gating(pnl, net_debit):
     if pnl < CONSTRAINT_RISK_POLICY['min_pnl_edge']:
         return False
@@ -59,6 +67,10 @@ def run_strategy(ticker, date, live=False, output_path=None):
     decay_status = flag_decay_weighting(volume_series, time_series, flag_timestamps, ticker)
     # NOTE: Risk check must occur after synthetic and pnl are defined
     # Previous: risk_status = risk_gates_flags_actions(ticker)  # Adjust args if needed
+
+    if manual_test:
+        print(f"[Test Mode] Decay status for {ticker}: {decay_status}")
+
     risk_status = None  # Adjust args if needed
 
     # The following code, for my own understanding, is an expansion of:
@@ -91,10 +103,20 @@ def run_strategy(ticker, date, live=False, output_path=None):
     options_data = get_option_chain(ticker, date, live=live)
 
     synthetic = build_synthetic_long(price_data, options_data)
+    
+    if synthetic["pnl_edge"] < CONSTRAINT_RISK_POLICY["min_pnl_edge"]:
+        return {
+            "status": "skipped",
+            "reason": f"Insufficient PnL edge ({synthetic['pnl_edge']})",
+            "synthetic": synthetic
+        }
+    else:
+        print(f"Constructed synthetic: {synthetic}")
+
     pnl = evaluate_pnl(synthetic, price_data)
 
     # Now that synthetic and pnl are ready, perform actual risk gate check
-    from helper.abc import risk_gates_flags_actions  # Reinforce import here for clarity
+    # from helper.abc import risk_gates_flags_actions  # Reinforce import here for clarity
     risk_status = risk_gates_flags_actions(
         ticker=ticker,
         pnl=pnl,
@@ -145,3 +167,15 @@ if __name__ == "__main__":
 
     out = run_strategy(args.ticker, args.date, args.live, args.output)
     print(json.dumps(out, indent=2))
+
+
+# --- TODO List ---
+#
+# 1. ...
+# 2. Add exclusion logic
+# 3. Add audit and compliance related parts
+# 4. Optional, probably will not use, but in the far future:
+#    /Gate the risk involved currently
+#    /NOTE: For future enhancement, consider adding code integrity check:
+#    /import hashlib and log a SHA-256 of this module for traceable audits.
+#    /Optional example: hashlib.sha256(open(__file__, 'rb').read()).hexdigest()

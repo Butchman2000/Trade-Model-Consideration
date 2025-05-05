@@ -1,0 +1,54 @@
+# Program: synthetic_long_ai_ml_constraints (config)
+# Author: Brian Anderson
+# Origin Date: 04May2025
+# Version: 1.0
+# 
+# Purpose:
+#    /Discuss the necessary as to what is next steps for improvement.
+#    /If AI or ML is to be integrated in the future, these notes will guide us.
+
+"""
+Context:
+As the synthetic model reaches maturity, AI/ML/NN integration becomes the next frontier.
+To enable learning without loss of interpretability or control, we must define:
+
+1. Local Constraint Space:
+   - Inputs that AI/ML models can directly see or optimize over:
+     * IV level
+     * IV swing count (normalized per hour)
+     * Volume disjunction count
+     * Time-of-day bucket (e.g. pre-10:00, midday, post-2:30)
+     * Flag severity (yellow/orange/red)
+     * Most recent decay weight
+
+2. Global Constraints (non-negotiable limits):
+   - Max open synthetics
+   - Max IV exposure
+   - Max daily synthetic risk loss
+   - Stop sign triggers from flag system (e.g. red flag = full halt)
+   - Historical synthetic loss gates (prior-day shutdown thresholds)
+
+3. Exploration Space Definition:
+   - Permissible tunable ranges for AI/ML testing:
+     * min_edge_threshold: [0.25, 0.75]
+     * delay_entry_minutes: [5, 30]
+     * max_synthetics_allowed: [1, 10]
+     * trade_timing_weighting: [0.0, 1.0]
+     * flag_penalty_multiplier: [0.0, 2.5]
+
+4. Sequencing Strategy:
+   - Train and evaluate components in the following stages:
+     Stage 1: IV-only regime scoring (classify vs pass)
+     Stage 2: Add volume behavior and flag history
+     Stage 3: Include time-of-day and macro filters
+     Stage 4: Explore predictive models for synthetic profitability ranking
+
+5. Logging and Oversight:
+   - All ML decisions must be logged to JSON with:
+     * timestamp
+     * input state
+     * decision rationale
+     * override status (manual or triggered)
+   - All learned decisions must be replayable and reversibly auditable
+
+"""

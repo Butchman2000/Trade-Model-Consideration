@@ -1,0 +1,67 @@
+# Program: stock_harmonics_analyzer (helper)
+# Author: Brian Anderson
+# Origin Date: 03May2025
+# Version: 1.1
+#
+# Purpose:
+#    /Attempt to generate fast fourier transform (FFT)-based frequency signatures from price data
+
+"""
+This module produces a normalized frequency-domain representation of a time series (e.g. stock prices).
+It applies a Fast Fourier Transform (FFT) to extract the primary frequency components of volatility.
+
+Use Cases:
+- Compare TSLA's dominant intraday cycles to other stocks
+- Cluster stocks with similar spectral texture
+- Track resonance changes through the trading day
+
+Notes:
+- Input is assumed to be a time-ordered list of floats (e.g. minute closes)
+- Output is a simplified vector of FFT magnitudes for comparison
+- Useful for cosine similarity or signature fingerprinting
+"""
+
+import numpy as np
+
+def get_fft_signature(price_series, n_components=8):
+    """
+    Convert price data to an FFT-based volatility signature.
+
+    Args:
+        price_series (list of float): Close prices, ideally 32–256 points
+        n_components (int): Number of dominant FFT bins to return
+
+    Returns:
+        list of float: Normalized FFT magnitude components
+    """
+    if not price_series or len(price_series) < n_components:
+        return []
+
+    returns = np.diff(price_series)
+    if np.all(returns == 0):
+        return [0.0] * n_components
+
+    fft_result = np.fft.fft(returns)
+    magnitude = np.abs(fft_result[:n_components])
+    normalized = magnitude / np.sum(magnitude)
+    return normalized.tolist()
+
+
+def compare_signatures(sig_a, sig_b):
+    """
+    Compute cosine similarity between two FFT signatures
+
+    Args:
+        sig_a (list of float), sig_b (list of float)
+
+    Returns:
+        float: Similarity score (1.0 = identical)
+    """
+    if not sig_a or not sig_b or len(sig_a) != len(sig_b):
+        return 0.0
+
+    a = np.array(sig_a)
+    b = np.array(sig_b)
+    dot = np.dot(a, b)
+    norm = np.linalg.norm(a) * np.linalg.norm(b)
+    return dot / norm if norm != 0 else 0.0

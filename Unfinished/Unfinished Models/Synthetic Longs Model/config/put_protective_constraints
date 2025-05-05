@@ -1,0 +1,38 @@
+# Program: put_protective_constraints (constraints)
+# Author: Brian Anderson
+# Origin Date: 05May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Overlay rule set to reduce risk exposure from synthetic longs.
+
+"""
+This module evaluates whether a synthetic long structure complies with enhanced protection rules.
+It prevents entry when synthetic positions expose the account to excess risk without a long put hedge.
+Fallback: if no valid protective structure can be found, suggest cash-covered put.
+"""
+
+def evaluate_protective_structure(ticker, spot, put_chain, days_to_expiry):
+    protection_required = False
+    recommendation = "synthetic_long_ok"
+
+    if days_to_expiry < 2 or days_to_expiry > 10:
+        return False, "expiry_out_of_range"
+
+    if 50 <= spot <= 100:
+        for put in put_chain:
+            strike_ratio = put["strike"] / spot
+            if 0.92 <= strike_ratio <= 0.96 and put["type"] == "put":
+                if put["premium"] >= 0.80 and put["ask"] >= 0.80:
+                    return True, "valid_put_protection"
+        return False, "fallback_cash_covered"
+
+    elif spot > 100:
+        for put in put_chain:
+            strike_ratio = put["strike"] / spot
+            if 0.91 <= strike_ratio <= 0.95 and put["type"] == "put":
+                if put["premium"] >= 1.00 and put["ask"] >= 1.00:
+                    return True, "valid_put_protection"
+        return False, "no_valid_protection"
+
+    return True, "no_protection_required"

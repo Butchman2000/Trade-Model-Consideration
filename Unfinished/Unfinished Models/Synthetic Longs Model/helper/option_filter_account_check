@@ -1,0 +1,177 @@
+# Program: option_filter_account_check (helper)
+# Author: Brian Anderson
+# Origin Date: 03May2025
+# Version 1.5
+#
+# Purpose:
+#    /Filter options near current price for synthetic long strategies,
+#    /and validate account constraints before placing a trade.
+#
+# Compliance:
+#    /Respects blackout dates (macro events) and bin-based capital limits
+
+'''
+RISKS OF THE SYNTHETIC LONG SETUP:
+
+1. The short put leg introduces potentially large downside exposure.
+2. Margin requirements vary significantly by broker, and some will lock up nearly the full notional value.
+3. A large drop in the underlying could result in a large, uncovered loss — especially if the short put is deep ITM.
+4. Backtesting without simulating margin/collateral requirements leads to underestimating risk and overestimating return.
+5. Any unexpected fill slippage or execution during volatility could unbalance the synthetic and leave residual exposure.
+6. A synthetic long assumes you get both legs filled at intended prices, which may not occur in thin or fast markets.
+'''
+
+'''
+MITIGATION STRATEGIES:
+
+1. Simulate margin requirements conservatively during backtesting, especially for the short put leg.
+2. Use a synthetic allocation bin to control max exposure (both capital and count of positions).
+3. Restrict trading to stocks with liquid options and manageable nominal prices (< $2000).
+4. Introduce a fallback strategy using defined-risk spreads (put spreads) in high volatility names.
+5. Stress test positions against large adverse price moves (e.g., 10–20% gap downs) before approving strategy expansion.
+6. Prioritize ATM or near-ATM strikes to preserve intent of synthetic replication while minimizing tail exposure.
+'''
+
+from datetime import datetime
+import json
+
+from config.constraints import CONSTRAINT_FILTER, CONSTRAINT_MARGIN
+
+'''
+CONSTRAINT = {
+    'minimum_spot_larger_stock' = 120,
+    'pct_range_smaller_stock' = 0.05,
+    'pct_range_larger_stock' = 0.035,
+    'margin_multiple' = 1.5,
+    # ...   
+}
+'''
+
+# Option Filtering Logic
+
+def filter_option_strikes(options, spot, min_price=75, max_price=2000):
+    """
+    Filters the options chain to include only strikes within a defined percentage range
+    around the current stock price (spot), and limits to a maximum of ±8 strikes.
+
+    - For spot prices between $75 and $120, use ±5%
+    - For spot prices between $120 and $2000, use ±3.5%
+    - For prices outside this range, return empty (not tradable per constraints)
+    """
+    if not (min_price <= spot <= max_price):
+        return []  # Stock outside desired trading price range
+
+    # Decide range as percentage of spot price
+    if spot < CONSTRAINT_FILTER['minimum_spot_larger_stock']:
+        pct_range = CONSTRAINT_FILTER['pct_range_smaller_stock']  # for example, 5%
+    else:
+        pct_range = CONSTRAINT_FILTER['pct_range_larger_stock']  # for example, 3.5%
+
+    # Calculate upper and lower bounds
+    lower_bound = spot - (spot * pct_range)
+    upper_bound = spot + (spot * pct_range)
+
+    # Collect all strike prices within range
+    strikes_in_range = sorted(set(
+        o['strike'] for o in options if lower_bound <= o['strike'] <= upper_bound
+    ))
+
+    if not strikes_in_range:
+        return []  # No valid options in range
+
+    # Find the strike closest to the current price
+    closest_strike = min(strikes_in_range, key=lambda s: abs(s - spot))
+    center_index = strikes_in_range.index(closest_strike)
+
+    # Limit to ±8 strikes around the closest
+    lower_index = max(0, center_index - 8)
+    upper_index = center_index + 9  # +9 to include upper bound in slicing
+    filtered_strikes = strikes_in_range[lower_index:upper_index]
+
+    # Return only options that match these strikes
+    return [o for o in options if o['strike'] in filtered_strikes]
+
+
+# Account Validation Logic
+
+def account_allows_synthetic(account_info, position_cost):
+    """
+    Checks if the synthetic position can be opened based on account rules:
+    - Balance must be greater than $100,000
+    - Synthetic allocation bin must be able to absorb this position's cost
+    """
+    return (
+        account_info['balance'] > 100000 and
+        account_info['synthetic_bin'] >= position_cost
+    )
+
+# Margin estimation for short put
+
+def estimated_margin_for_short_put(spot, strike, premium):
+    # Estimate the margin required for writing a short put.
+    # This assumes a strike-relative difference or a premium-based rule-of-thumb
+    # Does not use broker-specific formulas, but gives conservative backtest simulation capbility
+
+    # raw dollar difference * 100
+    strike_vs_spot_cost_difference = (strike - spot) * 100
+    # premium buffer margin estimate
+    upper_premium_margin_requirement = premium * 100 * CONSTRAINT_MARGIN['margin_multiple']
+    
+    return strike_vs_spot_cost_difference, upper_premium_margin_requirement
+
+
+
+# Example usage in main strategy pipeline
+
+def run_strategy(ticker, date, live=False, output_path=None, account_info=None):
+    # Respect known blackout periods (e.g., CPI, Powell, NFP) from external helper
+    if is_blackout_time(date):
+        return {"status": "skipped", "reason": "blackout window"}
+
+    # Fetch price and options data
+    price_data = get_price_data(ticker, date, live=live)
+    options_data = get_option_chain(ticker, date, live=live)
+
+    # Apply filter to narrow to valid option strikes
+    filtered_options = filter_option_strikes(options_data, price_data['spot'])
+    if not filtered_options:
+        return {"status": "skipped", "reason": "no valid strikes"}
+
+    # Build synthetic position (long call + short put)
+    synthetic = build_synthetic_long(price_data, filtered_options)
+    estimated_cost = synthetic["net_debit"]
+
+    # Estimate the margin requirement for the short put component
+    put_strike = synthetic["put"]["strike"]
+    put_premium = synthetic["put"]["premium"]
+    spot_price = price_data["spot"]
+
+    margin_diff, margin_estimate = estimated_margin_for_short_put(spot_price, put_strike, put_premium)
+
+    # Enforce estimated margin check
+    if account_info and account_info.get("available_margin", 0) < margin_estimate:
+        return {"status": "skipped", "reason": "insufficient estimated margin"}
+
+    # Then enforce the regular synthetic capital bin constraints
+    if account_info and not account_allows_synthetic(account_info, estimated_cost):
+        return {"status": "skipped", "reason": "insufficient capital/bin limit"}
+
+
+    # Evaluate performance
+    pnl = evaluate_pnl(synthetic, price_data)
+
+    # Assemble output
+    result = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "ticker": ticker,
+        "date": str(date),
+        "pnl": pnl,
+        "details": synthetic
+    }
+
+    # Write JSON log to file for audit trail if path provided
+    if output_path:
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+    return result

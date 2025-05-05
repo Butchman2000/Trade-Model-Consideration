@@ -1,7 +1,7 @@
 # Program: synthetic_long_model
 # Author: Brian Anderson
 # Origin Date: 03May2025
-# Version: 1.3
+# Version: 1.5
 #
 # Purpose:
 #    /This analyzes the options region near current strike of a specific stock,
@@ -13,9 +13,12 @@ import json
 from datetime import datetime
 from helper.exclusion_dates import is_exclusion_time  # Periods of time to avoid action
 from market.data import get_option_chain, get_price_data  # Stub functions
-from strategy.synthetic import build_synthetic_long, evaluate_pnl  # Strategy logic
+from helper.build_synthetic_long import build_synthetic_long, evaluate_pnl  # Strategy logic
 
-from config.constraints import CONSTRAINT_SLIPPAGE, CONSTRAINT_RISK_POLICY, RISK_POLICY_VERSION
+from config.synthetic_long_constraints import CONSTRAINT_SLIPPAGE, CONSTRAINT_RISK_POLICY, RISK_POLICY_VERSION
+
+# Note: Improve this when possible
+from constraints.put_protective_constraints import put_protective_constraints
 
 # DO NOT ALTER THIS STRUCTURE.
 # This dictionary holds placeholder arrays ONLY.
@@ -23,7 +26,7 @@ from config.constraints import CONSTRAINT_SLIPPAGE, CONSTRAINT_RISK_POLICY, RISK
 # Editing or extending keys here will break gating logic and decay models.
 
 # Moved placeholder series structure to central config module
-from config.constraints import PLACEHOLDER_SERIES as CONSTRAINTS
+from config.synthetic_long_constraints import PLACEHOLDER_SERIES as CONSTRAINTS
 
 # --- Region below is for quick manual testing of logic and operation
 manual_test = True
@@ -57,7 +60,7 @@ def run_strategy(ticker, date, live=False, output_path=None):
     # Introduce the new cooldown logic, and gating details for flags and actions to take
         
     from helper.cooldown_flag_logic import flag_decay_weighting
-    from helper.abc import risk_gates_flags_actions
+    from risk.risk_gates_flags_actions import risk_gates_flags_actions
 
     # Placeholder for historical volume, timestamps, and flag timestamps
     volume_series = CONSTRAINTS["volume_series"]        # TODO: load actual recent volume data here
@@ -174,8 +177,3 @@ if __name__ == "__main__":
 # 1. ...
 # 2. Add exclusion logic
 # 3. Add audit and compliance related parts
-# 4. Optional, probably will not use, but in the far future:
-#    /Gate the risk involved currently
-#    /NOTE: For future enhancement, consider adding code integrity check:
-#    /import hashlib and log a SHA-256 of this module for traceable audits.
-#    /Optional example: hashlib.sha256(open(__file__, 'rb').read()).hexdigest()

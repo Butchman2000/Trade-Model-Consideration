@@ -1,0 +1,218 @@
+# Program Name: cup_handle_detect_fitted
+# Author: Brian Anderson
+# Origin Date: 05May2025
+# Version: 1.6
+#
+# Purpose:
+#    /collection of cup and handle detection functions, some of which pull flags from a  fitment program
+"""
+Pattern Detection Logic Library--Cup and Handle; Normal (double hump), and Saucer-Rounded Bottom Variant
+This file contains functions for identifying common stock price patterns
+Identifies the 'Cup and Handle' pattern, including saucer/rounded bottom variations.
+:param price_series: List of prices over time
+:param volume_series: Corresponding list of volumes
+:return: Dictionary with pattern flags, debug log, evaluation message, and optional visualization
+
+# Pulls from a fitment program (FTIR correlation rubber-armed men holding hands model).
+
+This file will be referenced as a library program might be recalled within a main trading program.
+"""
+
+import numpy as np
+from scipy.stats import linregress
+
+from pattern_fitment_comparer import evaluate_fitment, analyze_pattern_with_optional_fitment
+
+'''
+# === Configurable Constraints ===
+ROLLING_WINDOW_SIZE = 3  # [3,4,5]
+MAX_HANDLE_SLOPE = 0.1  # was 0.01  [0.02,0.045,0.065,0.1]
+HANDLE_DEPTH_RATIO = 0.2  # [0.1,0.15,0.2,0.25,0.3]
+HANDLE_DEPTH_TOLERANCE = 1.1  # [1.05,1.1,1.15,1.2]
+MAX_HANDLE_WIDTH_RATIO = 0.6  # [0.4,0.5,0.6,0.7]
+HANDLE_WIDTH_TOLERANCE = 1.05  # [1.02,1.05,1.1]
+MIN_HANDLE_WIDTH_RATIO = 0.1  # [0.05,0.1,0.15]
+BREAKOUT_VOLUME_MULTIPLIER = 1.4  # [1.2,1.3,1.4,1.5]
+BREAKOUT_SPIKE_DURATION_THRESHOLD = 2  # [2,3,4]
+BREAKOUT_SPIKE_VOLUME_MULTIPLIER = 1.9  # [1.6,1.9,2.2]
+'''
+
+# === Tuning Ranges for Constraints (for future optimization or UI) ===
+CONSTRAINT_RANGES = {
+    "ROLLING_WINDOW_SIZE": (3, 5),
+    "MAX_HANDLE_SLOPE": (0.01, 0.3),
+    "HANDLE_DEPTH_RATIO": (0.1, 0.4),
+    "HANDLE_DEPTH_TOLERANCE": (1.0, 1.5),
+    "MAX_HANDLE_WIDTH_RATIO": (0.4, 0.7),
+    "HANDLE_WIDTH_TOLERANCE": (1.0, 1.2),
+    "MIN_HANDLE_WIDTH_RATIO": (0.05, 0.2),
+    "BREAKOUT_VOLUME_MULTIPLIER": (1.2, 2.0),
+    "BREAKOUT_SPIKE_DURATION_THRESHOLD": (1, 4),
+    "BREAKOUT_SPIKE_VOLUME_MULTIPLIER": (1.5, 2.5),
+}
+
+# === Trigger Functions ===
+def detect_price_volume_spikes(price_series, volume_series, price_jump=1.5, volume_multiplier=2.0):
+    spike_flags = []
+    for i in range(1, len(price_series)):
+        price_change = abs(price_series[i] - price_series[i - 1])
+        volume_change = volume_series[i] / max(volume_series[i - 1], 1)
+        if price_change >= price_jump or volume_change >= volume_multiplier:
+            spike_flags.append(i)
+    return spike_flags
+
+def detect_converging_pressure(price_series, cup_high, window=10, tolerance=1.5):
+    """
+    Detect if the price steadily hugs or creeps toward the breakout line without strong rejection.
+    Suggests coiling or building pressure under resistance.
+    """
+    recent_prices = price_series[-window:]
+    avg_distance = np.mean([abs(cup_high - p) for p in recent_prices])
+    return avg_distance < tolerance
+  
+
+# === Final Evaluation Based on Flags ===
+def final_breakout_evaluation(flags):
+    pattern = flags.get("pattern")
+    spike = flags.get("spike_trigger")
+    coil = flags.get("coiling_pressure")
+
+    # Simple truth table evaluation
+    if pattern and spike and coil:
+        strength = 3
+        action_code = "ACT3"
+        message = "Cup & Handle pattern + spike + pressure: ideal breakout candidate."
+    elif pattern and spike:
+        strength = 2
+        action_code = "ACT2"
+        message = "Pattern with breakout momentum (spike), but no confirmed coil."
+    elif pattern and coil:
+        strength = 2
+        action_code = "ACT2b"
+        message = "Pattern + pressure, but no volume/momentum spike yet."
+    elif pattern:
+        strength = 1
+        action_code = "ACT1"
+        message = "Pattern recognized without confirmation. Watch only."
+    elif spike or coil:
+        strength = 0
+        action_code = "ACT0"
+        message = "Spike or pressure detected without structure. Possibly noisy."
+    else:
+        strength = 0
+        action_code = "NONE"
+        message = "No valid pattern or supporting signals."
+
+    # Formatted for interface: show at least 2 lines, word-wrapped if needed
+    formatted = f"(strength {strength}/ {action_code})\n{message}"
+    return {
+        "strength": strength,
+        "action_code": action_code,
+        "message": message,
+        "formatted": formatted
+    }
+
+# === Main Detection with Classification ===
+def detect_cup_and_handle(price_series, volume_series, config=None, visualize=False):
+    if config is None:
+        config = {
+            "ROLLING_WINDOW_SIZE": 3,
+            "MAX_HANDLE_SLOPE": 0.1,
+            "HANDLE_DEPTH_RATIO": 0.2,
+            "HANDLE_DEPTH_TOLERANCE": 1.1,
+            "MAX_HANDLE_WIDTH_RATIO": 0.6,
+            "HANDLE_WIDTH_TOLERANCE": 1.05,
+            "MIN_HANDLE_WIDTH_RATIO": 0.1,
+            "BREAKOUT_VOLUME_MULTIPLIER": 1.4,
+            "BREAKOUT_SPIKE_DURATION_THRESHOLD": 2,
+            "BREAKOUT_SPIKE_VOLUME_MULTIPLIER": 1.9,
+        }
+
+    debug_log = []
+    flags = {"pattern": False, "spike_trigger": False, "coiling_pressure": False}
+
+    spike_flags = detect_price_volume_spikes(price_series, volume_series)
+    if spike_flags:
+        flags["spike_trigger"] = True
+        debug_log.append(f"Volatility/volume spike trigger detected at indices: {spike_flags}")
+
+    smoothing_window = config["ROLLING_WINDOW_SIZE"]
+    smoothed_prices = np.convolve(price_series, np.ones(smoothing_window)/smoothing_window, mode='valid')
+
+    min_index = np.argmin(smoothed_prices)
+    left_side = smoothed_prices[:min_index]
+    right_side = smoothed_prices[min_index:]
+    if len(left_side) == 0 or len(right_side) == 0:
+        debug_log.append("Insufficient data for cup shape.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    coeffs = np.polyfit(np.arange(len(smoothed_prices)), smoothed_prices, 2)
+    if coeffs[0] >= 0:
+        # Try fallback linear regression as alternate shape test (e.g. Nike swoosh handle)
+        lin_slope, lin_intercept, lin_r, _, _ = linregress(np.arange(len(smoothed_prices)), smoothed_prices)
+        if lin_slope > 0.01 and abs(lin_r) > 0.85:
+            debug_log.append("Parabolic check failed, but upward-sloping structure confirmed via linear fit.")
+        else:
+            debug_log.append("Failed both quadratic concavity and linear slope checks.")
+            return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    handle_start = min_index + int(len(right_side) * 0.5)
+    handle = smoothed_prices[handle_start:]
+    if len(handle) < 2:
+        debug_log.append("Handle too short.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    cup_high = max(left_side.tolist() + right_side.tolist())
+    if detect_converging_pressure(price_series, cup_high):
+        flags["coiling_pressure"] = True
+        debug_log.append("Converging pressure detected near resistance.")
+
+    min_price = smoothed_prices[min_index]
+    handle_depth = max(handle) - min(handle)
+    max_allowed_depth = config["HANDLE_DEPTH_RATIO"] * (cup_high - min_price) * config["HANDLE_DEPTH_TOLERANCE"]
+    if handle_depth > max_allowed_depth:
+        debug_log.append("Handle depth exceeds tolerance.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    cup_width = len(left_side) + len(right_side)
+    max_handle_width = config["MAX_HANDLE_WIDTH_RATIO"] * cup_width * config["HANDLE_WIDTH_TOLERANCE"]
+    if not (config["MIN_HANDLE_WIDTH_RATIO"] * len(smoothed_prices) < len(handle) < max_handle_width):
+        debug_log.append("Handle width out of bounds.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    slope, _, _, _, _ = linregress(np.arange(len(handle)), handle)
+    if slope > config["MAX_HANDLE_SLOPE"]:
+        debug_log.append("Handle slope too steep upward.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    handle_volume = np.mean(volume_series[handle_start:])
+    breakout_volume = volume_series[-1]
+    if breakout_volume < config["BREAKOUT_VOLUME_MULTIPLIER"] * handle_volume:
+        debug_log.append("Breakout volume below threshold.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    breakout_spike_duration = np.sum(smoothed_prices[-3:] > cup_high)
+    if breakout_spike_duration <= config["BREAKOUT_SPIKE_DURATION_THRESHOLD"] and breakout_volume < config["BREAKOUT_SPIKE_VOLUME_MULTIPLIER"] * handle_volume:
+        debug_log.append("Breakout spike too brief or weak.")
+        return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}
+
+    if visualize:
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 5))
+        plt.plot(price_series, label='Stock Price', color='blue')
+        plt.scatter(min_index, smoothed_prices[min_index], color='red', label='Cup Bottom')
+        plt.axvspan(handle_start, handle_start + len(handle), color='orange', alpha=0.3, label='Handle')
+        plt.axhline(cup_high, color='green', linestyle='--', label='Cup High')
+        plt.legend()
+        plt.title("Cup and Handle Pattern Detection")
+        plt.xlabel("Time")
+        plt.ylabel("Price")
+        plt.show()
+
+    flags["pattern"] = True
+    debug_log.append("Pattern confirmed.")
+
+    # Optional: Fitment analysis if we're not seeing a spike yet
+    fitment_info = analyze_pattern_with_optional_fitment(price_series, volume_series, flags)
+
+    return {**flags, "debug_log": debug_log, **final_breakout_evaluation(flags)}

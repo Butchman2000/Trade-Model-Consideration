@@ -1,0 +1,91 @@
+# Program: Backtest Exclusion Criterion for 2025
+# Author: Brian Anderson
+# Origin Date: 05May2025
+# Version: 1.0
+
+from datetime import datetime, time
+
+# CPI release dates for 2025
+Date_CPI_Releases_2025 = [
+    datetime(2025, 1, 14), datetime(2025, 2, 12), datetime(2025, 3, 12), datetime(2025, 4, 10),
+    datetime(2025, 5, 14), datetime(2025, 6, 11), datetime(2025, 7, 10), datetime(2025, 8, 13),
+    datetime(2025, 9, 10), datetime(2025, 10, 10), datetime(2025, 11, 13), datetime(2025, 12, 10)
+]
+
+# FOMC announcement dates for 2025
+Date_FOMC_Announcements_2025 = [
+    datetime(2025, 1, 29), datetime(2025, 3, 19), datetime(2025, 4, 30), datetime(2025, 6, 11),
+    datetime(2025, 7, 30), datetime(2025, 9, 17), datetime(2025, 11, 5), datetime(2025, 12, 17)
+]
+
+# Powell speeches in 2025 (estimated placeholders)
+Date_Powell_Speeches_2025 = [
+    datetime(2025, 2, 6), datetime(2025, 8, 23), datetime(2025, 10, 2)
+]
+
+# Market half-days in 2025
+Date_Market_HalfDays_2025 = [
+    datetime(2025, 7, 3), datetime(2025, 11, 28), datetime(2025, 12, 24)
+]
+
+# Last trading day of each month in 2025
+Date_Last_Trading_Days_2025 = [
+    datetime(2025, 1, 31), datetime(2025, 2, 28), datetime(2025, 3, 31), datetime(2025, 4, 30),
+    datetime(2025, 5, 30), datetime(2025, 6, 30), datetime(2025, 7, 31), datetime(2025, 8, 29),
+    datetime(2025, 9, 30), datetime(2025, 10, 31), datetime(2025, 11, 28), datetime(2025, 12, 31)
+]
+
+# Quad Witching Dates 2025 (3rd Friday of Mar, Jun, Sep, Dec)
+Date_Quad_Witching_2025 = [
+    datetime(2025, 3, 21), datetime(2025, 6, 20), datetime(2025, 9, 19), datetime(2025, 12, 19)
+]
+
+# NFP Fridays 2025
+Date_NFP_2025 = [
+    datetime(2025, 1, 3), datetime(2025, 2, 7), datetime(2025, 3, 7), datetime(2025, 4, 4),
+    datetime(2025, 5, 2), datetime(2025, 6, 6), datetime(2025, 7, 4), datetime(2025, 8, 1),
+    datetime(2025, 9, 5), datetime(2025, 10, 3), datetime(2025, 11, 7), datetime(2025, 12, 5)
+]
+
+# Combine all exclusion dates into a set for faster lookup
+exclusion_dates = set(
+    Date_CPI_Releases_2025 +
+    Date_FOMC_Announcements_2025 +
+    Date_Powell_Speeches_2025 +
+    Date_Market_HalfDays_2025 +
+    Date_Last_Trading_Days_2025 )
+
+def is_valid_trading_day(date):
+    return date not in exclusion_dates
+
+def exit_time_on_fomc_day(date):
+    fomc_dates_only = {d.date() for d in Date_FOMC_Announcements_2025}
+    if date.date() in fomc_dates_only:
+        return (time(13, 45), time(18, 0))
+    return None
+
+def exit_time_on_half_day(date):
+    half_day_dates_only = {d.date() for d in Date_Market_HalfDays_2025}
+    if date.date() in half_day_dates_only:
+        return (time(11, 45), datetime(date.year, date.month, date.day + 1, 7, 0))
+    return None
+
+def powell_speech_blackout(date):
+    powell_dates_only = {d.date() for d in Date_Powell_Speeches_2025}
+    if date.date() in powell_dates_only:
+        return (time(14, 15), time(18, 0))
+    return None
+
+def quad_witching_exit_time(date):
+    quad_dates_only = {d.date() for d in Date_Quad_Witching_2025}
+    if date.date() in quad_dates_only:
+        return (time(13, 0), datetime(date.year, date.month, date.day + 1, 7, 0))
+    return None
+
+def nfp_trading_restrictions(date):
+    nfp_dates_only = {d.date() for d in Date_NFP_2025}
+    if date.date() in nfp_dates_only:
+        return (None, time(10, 30))
+    elif any((date - d).days == -1 for d in Date_NFP_2025):
+        return (time(15, 15), None)
+    return None

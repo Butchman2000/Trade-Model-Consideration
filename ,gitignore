@@ -1,0 +1,19 @@
+# Program: .gitignore
+# Author: Brian Anderson
+# Origin Date: 12May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Material to set aside safely.
+
+# My account info and allocations.
+config.yaml
+
+# My credentials for Interactive Brokers.
+credentials.list
+
+# My HAR dump file, if HAR logging is enabled.
+har_logging_proxy/dump.har
+
+# Byte-compiled / optimized / DLL files.
+__pycache__/

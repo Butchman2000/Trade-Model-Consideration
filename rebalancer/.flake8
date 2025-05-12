@@ -1,0 +1,14 @@
+# Program: flake8
+# Author: Brian Anderson
+# Origin Date: 12May2025
+# Version: 1.0
+#
+# Purpose:
+#    /To provide the necessary alignments.
+
+# https://github.com/psf/black/blob/06ccb88bf2bd35a4dc5d591bb296b5b299d07323/docs/guides/using_black_with_other_tools.md#flake8
+[flake8]
+ignore =
+    E203,
+    E501,
+    W503

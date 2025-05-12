@@ -1,0 +1,22 @@
+# Program: run
+# Author: Brian Anderson
+# Origin Date: 12May2025
+# Version: 1.0
+#
+# Purpose:
+#    /In suport of the necessary
+
+#    !/usr/bin/env bash
+
+# https://gist.github.com/mohanpedala/1e2ff5661761d3abd0385e8223e16425
+set -e
+set -u
+set -o pipefail
+
+mitmdump \
+  -p 8080\
+  --mode upstream:https://localhost:5000 \
+  --ssl-insecure \
+  --set termlog_verbosity=debug \
+  --set hardump=./dump.har \
+  -s ./har_dump.py

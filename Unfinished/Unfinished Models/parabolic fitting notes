@@ -1,0 +1,24 @@
+circle: (x-h)^2 + (y-k)^2 =r
+
+ellipse (fatter horizontally): ((x-h)^2 / a^2) + *(y-k)^2 / b^2) =1 ; a>b 
+ellipse (fatter vertically): ((x-h)^2 / b^2) + *(y-k)^2 / ak^2) =1 ; a>b
+
+PARABOLIC
+(y-a) = -(1/b)*(x-c)^2
+range a:
+low = min 2, or
+	[1.25* lowest price (open/close) of any of the previous 40 candles (1 min mode)
+	or 20 candles (2 min mode)
+	or 10 candles (5 min mode)]
+high = 1.25*highest price (open/close) of any... (same...)
+step value: 0.01
+range b: (0.2, 50); step value 0.1
+range c: (-8,6); step value 0.2
+
+highest focus is aligning a, then (c,a equally)
+variable b needs to be able to ignore/buffer some extreme movement here and there, on the way down.
+
+once fitting found above r^2 of 0.75 (unsure about this)
+find value of put with the greatest potential of benefitting (between delta 0.75 and delta 0.25)
+project (via dfed+kurtosis maybe) the value going forward
+choose values to gather, such as (10,80); step 2.5 or 5

@@ -1,0 +1,27 @@
+[tool.poetry]
+
+# Portfolio_rebalancer
+file = "pyproject.toml"
+author = ["Brian Anderson <Bdander2000@msn.com>]
+originDate = 12May2025
+version: 1.0
+
+purpose = ""
+readme = "README_portfolio_rebalancer.md"
+packages = [{include = "portfolio_rebalancer"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "^2.29.0"
+mitmproxy = "^9.0.1"
+
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^6.0.0"
+pre-commit = "^3.2.2"
+behave = "^1.2.6"
+pyhamcrest = "^2.0.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

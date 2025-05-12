@@ -1,0 +1,24 @@
+# Program: docker_compose
+# Author: Brian Anderson
+# Origin Date: 12May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Docker configuration information.
+
+services:
+  # For more, see https://github.com/voyz/ibeam
+  
+  authentication_gateway:
+    image: voyz/ibeam:0.4.3
+    container_name: ibeam
+    env_file:
+      - credentials.list
+    environment:
+     # Give myself 30 seconds to do the 2FA login on my phone.
+      - IBEAM_PAGE_LOAD_TIMEOUT=30
+    ports:
+      - 5000:5000
+      - 5001:5001
+    network_mode: bridge # Required due to clientportal.gw IP whitelist
+    restart: 'no' # Prevents IBEAM_MAX_FAILED_AUTH from being exceeded

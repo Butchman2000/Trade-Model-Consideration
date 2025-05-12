@@ -1,0 +1,9 @@
+# Program: .python_version
+# Author: Brian Anderson
+# Origin Date: 12May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Determine the needed version of python.
+
+3.11.2

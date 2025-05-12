@@ -1,13 +1,23 @@
 # Program: exclusion_tools
 # Author: Brian Anderson
 # Origin Date: 01May2025
-# Version: 1.0
+# Version: 1.1
 #
 # Purpose:
 #    /Centralized utility for applying trading day exclusions.
 #    /Used by all strategy models to ensure consistency with macro/calendar filters.
+#    /Days, and times of days, in exclusions files, are to be avoided, as a blackout.
+#    /Unless a model can benefit from those times of elevated instability/volatility.
+#    /E.g. spx_vix_divergence model should still run during some exclusion date/times.
 
 import importlib
+from exclusions import exclusions_2019
+from exclusions import exclusions_2020
+from exclusions import exclusions_2021
+from exclusions import exclusions_2022
+from exclusions import exclusions_2023
+from exclusions import exclusions_2024
+from exclusions import exclusions 2025
 
 def load_exclusions_by_year(year):
     try:

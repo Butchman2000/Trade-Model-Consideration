@@ -1,7 +1,7 @@
 # Program: golden_cross_strategy_model
 # Author: Brian Anderson
 # Origin Date: 01May2025
-# Version: 1.3
+# Version: 1.4
 #
 # Purpose:
 #   - Evaluate a classic moving average crossover strategy (Golden Cross)
@@ -16,9 +16,9 @@ from datetime import datetime, timedelta
 # Custom module for exclusion logic
 from utils.exclusion_tools import should_trade_on
 # Import externalized whipsaw filter
-from utils.volatility_filters import vix_whipsaw_filter
+from helpers.volatility_filters import vix_whipsaw_filter
 # Import tactical entry filter
-from utils.entry_conditions_helper import entry_conditions_met
+from helpers.entry_conditions_helper import entry_conditions_met
 
 '''
 INSTRUCTIONS:

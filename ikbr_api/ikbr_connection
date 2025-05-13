@@ -1,0 +1,101 @@
+# Program: ikbr_connection
+# Author: Brian Anderson
+# Origin Date: 06May2025
+# Version: 1.0
+#
+# Purpose:
+#    /Connect to Interactive Brokers (IBKR) via ib_insync
+#    /Toggle between paper and real trading environments
+#    /Set up base structure for future trading model integration
+#    /Include time-based checks for market hours
+
+'''
+Constraints:
+- Paper vs Real is controlled by `USE_PAPER` toggle
+- Does not send any orders by default
+- Logs connection and readiness
+'''
+
+import json
+import pandas as pd
+from ib_insync import IB, util
+from datetime import datetime, time as dtime
+import pytz
+
+# Toggle environment
+USE_PAPER = True  # False = real trading
+IB_GATEWAY_HOST = '127.0.0.1'
+IB_GATEWAY_PORT = 7497 if USE_PAPER else 7496  # Paper:7497, Live:7496
+IB_CLIENT_ID = 1  # Must be unique per app
+
+# Time window example (US Eastern time)
+MARKET_OPEN = dtime(9, 30)
+MARKET_CLOSE = dtime(16, 0)
+EASTERN = pytz.timezone('US/Eastern')
+
+
+def is_market_open():
+    now_est = datetime.now(EASTERN).time()
+    return MARKET_OPEN <= now_est <= MARKET_CLOSE
+
+
+def connect_ibkr():
+    ib = IB()
+    try:
+        ib.connect(IB_GATEWAY_HOST, IB_GATEWAY_PORT, clientId=IB_CLIENT_ID)
+        print(f"Connected to IBKR ({'Paper' if USE_PAPER else 'Live'})")
+    except Exception as e:
+        print("Failed to connect to IBKR:", e)
+        return None
+    return ib
+
+
+def export_positions(ib):
+    positions = ib.positions()
+    for acct, contract, position in positions:
+        print(f"{contract.symbol} | {position} shares/contracts in {acct}")
+
+    position_data = [{
+        "account": acct,
+        "symbol": contract.symbol,
+        "secType": contract.secType,
+        "expiry": contract.lastTradeDateOrContractMonth,
+        "strike": contract.strike,
+        "right": contract.right,
+        "multiplier": contract.multiplier,
+        "exchange": contract.exchange,
+        "currency": contract.currency,
+        "position": position
+    } for acct, contract, position in positions]
+
+    with open("positions.json", "w") as f:
+        json.dump(position_data, f, indent=2)
+
+    df = pd.DataFrame(position_data)
+    df.to_csv("positions.csv", index=False)
+
+
+def main():
+    if not is_market_open():
+        print("Market is closed. Exiting.")
+        return
+
+    ib = connect_ibkr()
+    if ib is None:
+        return
+
+    print("Ready to run trading model...")
+
+    # Optional: check account summary
+    account = ib.reqAccountSummary()
+    print("Account summary:")
+    print(account)
+
+    # Export positions to JSON and CSV
+    export_positions(ib)
+
+    ib.disconnect()
+
+
+if __name__ == "__main__":
+    main()

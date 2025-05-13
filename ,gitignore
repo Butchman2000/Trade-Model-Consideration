@@ -1,7 +1,7 @@
 # Program: .gitignore
 # Author: Brian Anderson
 # Origin Date: 12May2025
-# Version: 1.0
+# Version: 1.1
 #
 # Purpose:
 #    /Material to set aside safely.
@@ -17,3 +17,6 @@ har_logging_proxy/dump.har
 
 # Byte-compiled / optimized / DLL files.
 __pycache__/
+
+# Ignore connection configuration data.
+.env

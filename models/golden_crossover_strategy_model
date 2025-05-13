@@ -1,78 +1,107 @@
 # Program: golden_cross_strategy_model
 # Author: Brian Anderson
 # Origin Date: 01May2025
-# Version: 1.0
+# Version: 1.3
 #
 # Purpose:
-#   /Enable evaluation of a commonly-known moving average crossover strategy.
-#   /Generate long entries when 50-day SMA crosses above 200-day SMA (Golden Cross).
-#   /Exit position when 50-day crosses below 200-day (Death Cross).
+#   - Evaluate a classic moving average crossover strategy (Golden Cross)
+#   - Apply VIX-based whipsaw filtering to avoid entering trades during high-volatility regimes
+#   - Introduce dynamic position sizing based on macro (Golden Cross) vs. tactical entry filters
+#   - Ensure signal compliance and system auditability
 
 import yfinance as yf
 import pandas as pd
+from datetime import datetime, timedelta
 
+# Custom module for exclusion logic
 from utils.exclusion_tools import should_trade_on
+# Import externalized whipsaw filter
+from utils.volatility_filters import vix_whipsaw_filter
+# Import tactical entry filter
+from utils.entry_conditions_helper import entry_conditions_met
 
-# --- Download data ---
+'''
+INSTRUCTIONS:
+To make vix_whipsaw_filter work as a reusable helper, ensure the following inside utils/volatility_filters.py:
+
+1. The function definition remains exactly as:
+   def vix_whipsaw_filter(current_date, vix_data, state):
+
+2. It must not rely on external script-level state. Everything passed explicitly.
+
+3. Required dependencies in that module:
+   import pandas as pd
+   from datetime import timedelta
+
+4. If used for logging or diagnostics, consider injecting a logging interface optionally
+   (not required for this version).
+
+5. Optional: Add unit tests to tests/test_volatility_filters.py to ensure regressions don’t
+   break core functionality.
+'''
+
+# === Download SPY and VIX Data ===
 ticker = 'SPY'
-data = yf.download(ticker, start='2000-01-01', end='2025-05-01')
-data = data[['Close']].copy()
+vix_ticker = '^VIX'
 
-# --- Compute SMAs ---
-data['SMA_50'] = data['Close'].rolling(50).mean()
-data['SMA_200'] = data['Close'].rolling(200).mean()
+spy_data = yf.download(ticker, start='2000-01-01', end='2025-05-01')
+vix_data = yf.download(vix_ticker, start='2000-01-01', end='2025-05-01')
+
+spy_data = spy_data['Close'].copy()
+vix_data = vix_data['Close'].copy()
+
+# === Compute Moving Averages ===
+data = pd.DataFrame(index=spy_data.index)
+data['Close'] = spy_data
+data['SMA_50'] = spy_data.rolling(50).mean()
+data['SMA_200'] = spy_data.rolling(200).mean()
+data['EMA_9'] = spy_data.ewm(span=9).mean()
+data['EMA_20'] = spy_data.ewm(span=20).mean()
+data['VWAP'] = spy_data.rolling(5).mean()  # Placeholder for real VWAP logic
+data['Volume'] = 1000000  # Placeholder: inject real volume if available
 data.dropna(inplace=True)
 
-# --- Generate signals ---
+# === Initialize State and Generate Signals ===
 data['Position'] = 0
 position = 0
-entry_price = 0
-trades = []
+state = {}  # VIX regime state holder
 
-for i in range(1, len(data)):
-    today = data.iloc[i]
-    yesterday = data.iloc[i - 1]
-    date = data.index[i]
-
-    # Entry signal
-    if position == 0 and yesterday['SMA_50'] < yesterday['SMA_200'] and today['SMA_50'] > today['SMA_200']:
-    if not should_trade_on(date):
-        print(f"[SKIP] Entry blocked on {date.date()}")
+for current_date in data.index:
+    if not should_trade_on(current_date):
         continue
-    entry_price = today['Close'] * 1.001  # 0.1% entry slippage
-    entry_date = date
-    position = 1
 
-    # Exit signal
-    elif position == 1 and yesterday['SMA_50'] > yesterday['SMA_200'] and today['SMA_50'] < today['SMA_200']:
-        if not should_trade_on(date):
-            print(f"[SKIP] Exit blocked on {date.date()}")
-            continue
-        exit_price = today['Close'] * 0.999
-        exit_date = date
-        trades.append({
-            'Entry_Date': entry_date,
-            'Exit_Date': exit_date,
-            'Entry_Price': round(entry_price, 2),
-            'Exit_Price': round(exit_price, 2),
-            'Return': round((exit_price - entry_price) / entry_price, 5)
-        })
+    # Evaluate volatility regime
+    regime, state = vix_whipsaw_filter(current_date, vix_data, state)
+    if regime != 'normal':
+        continue  # Skip trading during yellow/red light regimes
+
+    short_ma = data.loc[current_date, 'SMA_50']
+    long_ma = data.loc[current_date, 'SMA_200']
+    golden_cross_active = short_ma > long_ma
+
+    # Tactical filter (entry gating based on VWAP, EMA(9/20), etc.)
+    sentiment_today = 'neutral'  # Placeholder: integrate actual sentiment source
+    if not entry_conditions_met(current_date, data, sentiment_score=sentiment_today):
+        continue  # Skip if tactical entry gates not satisfied
+
+    # Entry signal: Golden Cross (macro trend confirmation)
+    if short_ma > long_ma and position == 0:
+        position = 1  # Full/ramped position
+        data.at[current_date, 'Position'] = position
+
+    # Tactical entry without Golden Cross (macro trend not confirmed)
+    elif short_ma <= long_ma and position == 0:
+        position = 0.5  # Smaller tactical position
+        data.at[current_date, 'Position'] = position
+
+    # Exit signal: Death Cross
+    elif short_ma < long_ma and position > 0:
         position = 0
+        data.at[current_date, 'Position'] = position
 
-# --- Results ---
-results = pd.DataFrame(trades)
-results['Equity'] = (1 + results['Return']).cumprod()
+    # Hold current position if no new signal
+    else:
+        data.at[current_date, 'Position'] = position
 
-print("\nGolden Cross Strategy Backtest Results")
-print("--------------------------------------")
-print(results)
-print(f"\nCumulative Return: {results['Equity'].iloc[-1]:.2f}")
-print(f"Avg Return per Trade: {results['Return'].mean():.2%}")
-print(f"Win Rate: {(results['Return'] > 0).mean():.2%}")
-
-# --- TODO List ---
-# 1. Add logic for short-side or inverse ETF entry on Death Cross.
-# 2. Support multi-asset universe loop.
-# 3. Track drawdown, equity curve, and risk-adjusted returns.
-# 4. Implement account apportionment controls here or in main or elsewhere.
-# 5. Incorporate auditing and compliance controls.
+# === Final Output Preview ===
+print(data.tail())

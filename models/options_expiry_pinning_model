@@ -1,13 +1,30 @@
 # Program: options_expiry_pinning_model
 # Author: Brian Anderson
 # Origin Date: 01May2025
-# Version: 1.0
+# Version: 1.1
 #
 # Purpose:
 #    /This identifies high open interest strikes options, and looks for near-expiration
 #    /price convergence, assuming that I can supply actual data at some point.
 #    /Some specific subscription will probably be required to get historicals.
 #    /An additional subscription will be needed to obtain live options data.
+#
+# Notes:
+'''
+The model is event-anchored (expiry Friday), not intraday pattern-based, so we do not need ultra-fine resolution.
+Recommended:
+Daily data is enough for signal generation.
+Intraday (15–30 min) might help for execution, not model logic.
+4H granularity is mostly redundant unless we are monitoring dealer hedging live intraday (which requires access I do not have).
+Use daily OHLC for modeling; 5–15 min only for Friday execution.
+
+Summary
+VIX > 25 → the model degrades.
+VIX > 30 → don’t use it.
+VIX > 50 → you should be trading vol expansion or cash.
+We do not need high-frequency data; daily data for signal, intraday only for entry.
+Think of this model like a calm-weather sailboat—don't take it out during a hurricane.
+'''
 
 import pandas as pd
 from datetime import datetime, timedelta

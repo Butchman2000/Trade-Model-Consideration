@@ -1,0 +1,105 @@
+# TRAJECTORY PLANNING FRAMEWORK - PMCC ORBITAL NAVIGATION
+
+"""
+This document outlines the core modeling philosophy behind probabilistic PMCC optimization,
+framed as a navigational system for capital-efficient option trading. It borrows concepts from
+orbital mechanics, trajectory correction maneuvers, and predictive market topology.
+"""
+
+# ---- CORE CONCEPTS ----
+
+# 1. SURFACE TIERS
+# Tier 1: Week 1 (short call entry)
+# - Full-resolution surface
+# - Modeled with high granularity (strike × IV grid)
+# - Critical launch vector selection
+
+# Tier 2: Midcourse Weeks (e.g., Week 2, 3, 4)
+# - Simplified penalty surfaces using frustum approximations
+# - Movable flat-top window (optimal zone)
+# - Sloped perimeter to model deviation risk
+# - Optional: bloom zones (non-adjacent low-penalty tiles)
+
+# Tier 3: Arrival Week (LEAP leg)
+# - May use frustum, possibly smoothed or expanded
+# - Destination alignment zone (must intersect trajectory)
+# - Minor corrective power remaining (burns expensive)
+
+
+# 2. BURN ZONE CLASSIFICATION
+# - Soft Pass: No adjustment needed, minimal angle change
+# - Curve Correction: Minor burn to stay on arc
+# - Sharp Angle: Must burn — high curvature, skew, or IV shift
+# - Fuel Forward: Reserve delta/vega or capital to enable future adjustment
+#   - Recommend budgeting fuel forward by 1.1× of DFED (Deterministic Forward Expected Distribution) predicted shift
+#   - Accounts for Black-Scholes limitations under stochastic volatility
+#   - Allows 'pre-loading' Earth for adjustment if trajectory through intermediate weeks becomes unstable
+# - Supernova Events:
+#   - When market-wide volatility (e.g., VIX > 90) spikes to extreme levels, the normal rules of navigation collapse
+#   - Expect gravitational warping of trajectory — surface topology becomes unpredictable
+#   - Post-spike IV collapse (e.g., -33% in an hour) can create nonlinear price expansions
+#   - These are not tradable in standard PMCC flight plans
+#   - Require emergency vectoring or rapid withdrawal — navigational fabric becomes distorted
+#   - Model should trigger Command Center alert for abandonment conditions if IV asymmetry develops:
+#     - Short-call IV collapsing far faster than long-call IV
+#     - Extreme divergence in delta behavior across expiration layers
+#     - Sudden loss of resolution in forward surfaces (frustums invalidated)
+#   - Frustum window may exhibit compounded lensing effect:
+#     - Earth-target (profit zone) appears to shrink rapidly as VIX increases
+#     - Apparent destination may warp or recede
+#     - Model must account for perceived reduction in achievable alignment when VIX crosses stress thresholds
+#
+# - VIX-Driven Frustum Rules:
+#   - VIX ≤ 24: Flat-top window is wide, penalties light — "Easy Going"
+#   - 24 < VIX ≤ 28: Window contracts moderately, slope increases — "Hmm..."
+#   - 28 < VIX ≤ 32: Narrow path, elevated burn risk — "Caution"
+#   - 32 < VIX ≤ 36: Critical tight angle only — "Warning"
+#   - 36 < VIX ≤ 40: Minimal viable window, prepare escape path — "WATCH OUT"
+#   - VIX > 40: Auto-abandon — trajectory irrecoverable under frustum logic
+
+
+# 3. STRATEGIC ELEMENTS
+# - Entry surface sets vector (Week 1 delta = critical)
+# - Midweeks shift the cone of success (window moves inward)
+# - Frustum centers reflect this drift (Week 1 edge → Week 2 middle)
+# - Watch for non-linear skew events (IV twist = unexpected slope)
+
+
+# 4. MODEL EXTENSIONS
+# - Cost overlays for burns (theta loss, bid-ask spread)
+# - Probabilistic path ensembles (Monte Carlo through penalty layers)
+# - Visual arc mapping (like Apollo navigation lines through distorted fields)
+
+
+# 5. OUTCOME
+# - Final PMCC intercepts the LEAP zone with minimal drift
+# - Corrected if necessary, but ideally inertial
+# - Fuel preserved, capital efficient, risk-transparent
+
+
+# ---- ADDITIONAL FRAMEWORK LAYERS ----
+
+# A. SURFACE UNCERTAINTY NOTATION
+# - Capture uncertain IV/skew/volume inputs using 'fog index' or variance overlay
+# - Grid cells with high uncertainty gain shaded opacity or stochastically varying penalty weights
+# - Evaluator may skip unstable regions or assign lower confidence multipliers
+# - Useful during low liquidity or when earnings events approach
+
+# B. FRUSTUM DRIFT INDEX
+# - Define center drift across week-layers (e.g., center_x += drift_per_week)
+# - Allow center to migrate due to macro or micro changes
+# - Keep log of weekly drift deltas — useful for tracking persistent skew
+# - May require recalibration of burn timing if midcourse corrections shift too late
+
+# C. MULTI-ROUTE ANALYSIS
+# - Detect when more than one viable arc exists from origin to Earth
+# - Score each route using total penalty and variance sensitivity
+# - May trigger branching planner (parallel strategy)
+# - Archive and rank historical route structures for pattern recognition
+
+# D. CONFIDENCE MODEL INTEGRATION
+# - Normalize path penalty into surface_score (0.0 to 1.0)
+# - Feed surface_score into bin confidence calculation
+# - If score drops below 0.65, reduce allocation or halt PMCC entry
+# - Link surface_score weight to history_success and IV stability
+# - Allows dynamic confidence reflex across regime changes

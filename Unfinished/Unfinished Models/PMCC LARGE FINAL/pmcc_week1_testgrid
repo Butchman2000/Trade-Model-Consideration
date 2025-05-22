@@ -1,0 +1,168 @@
+# PMCC WEEK 1 TESTGRID
+"""
+This script generates a mock option surface and option chain for testing
+Week 1 short call selection. It includes mock tiles, mock option data,
+and runs the candidate evaluation logic from `pmcc_entry_selector`.
+"""
+
+import random
+# Addition of Evaluation Logic, follow that logic, otherwise enable the next line:
+# from pmcc_entry_selector import evaluate_week1_candidates
+
+# ----------------------
+# MOCK TILE STRUCTURE
+# ----------------------
+class Tile:
+    def __init__(self, delta, penalty, slope, curvature):
+        self.delta = delta
+        self.penalty = penalty
+        self.slope = slope
+        self.curvature = curvature
+
+# ----------------------
+# EVALUATION LOGIC PLACEHOLDER
+# ----------------------
+def evaluate_week1_candidates(option_chain, surface, context):
+    """
+    This is where the evaluation logic for short call candidates would be implemented.
+    For each option:
+    - Check if it's viable (delta range, open interest, bid-ask spread)
+    - Lookup tile at its coordinates
+    - Score the tile
+    - Select top N scored entries
+    """
+    results = []
+
+    for opt in option_chain:
+        delta = opt['delta']
+        oi = opt['open_interest']
+        spread = opt['ask'] - opt['bid']
+        if not (context['delta_min'] <= delta <= context['delta_max'] and oi >= context['min_open_interest'] and spread <= context['max_bid_ask_spread']):
+            continue
+
+        i, j = opt['tile_coords']
+        tile = surface[i][j]
+        delta_score = 1.0 - abs(tile.delta - context['ideal_short_delta']) / 0.25
+        penalty_score = 1.0 - tile.penalty / 0.25
+        curvature_score = 1.0 - tile.curvature / 0.10
+        slope_score = 1.0 - tile.slope / 0.10
+
+        delta_score = max(0.0, min(delta_score, 1.0))
+        penalty_score = max(0.0, min(penalty_score, 1.0))
+        curvature_score = max(0.0, min(curvature_score, 1.0))
+        slope_score = max(0.0, min(slope_score, 1.0))
+
+        score = round(0.4 * delta_score + 0.3 * penalty_score + 0.2 * curvature_score + 0.1 * slope_score, 4)
+
+        results.append({
+            'symbol': 'TESTSYM',
+            'strike': opt['strike'],
+            'delta': opt['delta'],
+            'score': score,
+            'coords': (i, j),
+            'tile_penalty': tile.penalty,
+            'tile_slope': tile.slope,
+            'tile_curvature': tile.curvature
+        })
+
+    results = sorted(results, key=lambda x: x['score'], reverse=True)[:3]
+    return results
+
+# ----------------------
+# GENERATE MOCK SURFACE
+# ----------------------
+def generate_mock_surface():
+    surface = []
+    for i in range(10):
+        row = []
+        for j in range(10):
+            delta = round(0.1 + 0.08 * i, 2)  # range ~0.18 to 0.90
+            penalty = round(random.uniform(0.01, 0.20), 4)
+            slope = round(random.uniform(0.01, 0.05), 4)
+            curvature = round(random.uniform(0.01, 0.04), 4)
+            row.append(Tile(delta, penalty, slope, curvature))
+        surface.append(row)
+    return surface
+
+# ----------------------
+# GENERATE MOCK OPTION CHAIN
+# ----------------------
+def generate_mock_option_chain():
+    chain = []
+    for i in range(10):
+        for j in range(10):
+            delta = round(0.1 + 0.08 * i, 2)
+            option = {
+                'strike': 100 + j,
+                'delta': delta,
+                'bid': 1.00,
+                'ask': 1.10,
+                'open_interest': random.randint(50, 300),
+                'tile_coords': (i, j)
+            }
+            chain.append(option)
+    return chain
+
+# ----------------------
+# CONTEXT CONFIGURATION
+# ----------------------
+def get_context():
+    return {
+        'ideal_short_delta': 0.30,
+        'delta_min': 0.25,
+        'delta_max': 0.45,
+        'min_open_interest': 100,
+        'max_bid_ask_spread': 0.15
+    }
+
+# ----------------------
+# VISUALIZATION
+# ----------------------
+import matplotlib.pyplot as plt
+import numpy as np
+
+def visualize_surface_scores(surface, context):
+    score_map = np.zeros((10, 10))
+    for i in range(10):
+        for j in range(10):
+            tile = surface[i][j]
+            delta_score = 1.0 - abs(tile.delta - context['ideal_short_delta']) / 0.25
+            penalty_score = 1.0 - tile.penalty / 0.25
+            curvature_score = 1.0 - tile.curvature / 0.10
+            slope_score = 1.0 - tile.slope / 0.10
+
+            delta_score = max(0.0, min(delta_score, 1.0))
+            penalty_score = max(0.0, min(penalty_score, 1.0))
+            curvature_score = max(0.0, min(curvature_score, 1.0))
+            slope_score = max(0.0, min(slope_score, 1.0))
+
+            score = 0.4 * delta_score + 0.3 * penalty_score + 0.2 * curvature_score + 0.1 * slope_score
+            score_map[i][j] = score
+
+    plt.imshow(score_map, cmap='viridis', interpolation='nearest')
+    plt.colorbar(label='Candidate Score')
+    plt.title("Week 1 Surface Score Map")
+    plt.xlabel("IV Index (strike col)")
+    plt.ylabel("Delta Index (row)")
+    plt.show()
+
+# ----------------------
+# MAIN TEST EXECUTION
+# ----------------------
+if __name__ == "__main__":
+    surface = generate_mock_surface()
+    chain = generate_mock_option_chain()
+    context = get_context()
+
+    candidates = evaluate_week1_candidates(chain, surface, context)
+
+    visualize_surface_scores(surface, context)
+
+    print("
+Selected Candidates:")
+    for c in candidates:
+        print(c)
+
+# NOTE: Visualization removed due to environment limitations (matplotlib not available).
+# To re-enable visualization in a compatible environment, re-import matplotlib and
+# define a surface scoring heatmap using imshow or a similar plotting function.

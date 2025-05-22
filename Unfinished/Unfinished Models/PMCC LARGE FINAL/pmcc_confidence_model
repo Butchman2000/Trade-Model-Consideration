@@ -1,0 +1,113 @@
+# PMCC CONFIDENCE MODEL
+"""
+This module estimates the confidence score (0.0 to 1.0) for a proposed PMCC position.
+Confidence is based on technical, structural, and market volatility inputs.
+This score informs bin allocation strategy and determines if overflow usage is permissible.
+"""
+
+# ----------------------
+# BASE WEIGHTS (ADJUSTABLE)
+# ----------------------
+WEIGHT_DELTA_ALIGNMENT = 0.25
+WEIGHT_IV_STABILITY = 0.25
+WEIGHT_SURFACE_SCORE = 0.25
+WEIGHT_HISTORY_SUCCESS = 0.25
+
+# ----------------------
+# INPUT EXPECTATIONS
+# ----------------------
+# delta_long: float (target ~0.70)
+# delta_short: float (target ~0.30)
+# iv_stability: float (0.0 = unstable, 1.0 = highly stable)
+# surface_score: float (0.0 = poor arc, 1.0 = ideal arc)
+# history_success: float (long-term model success rate, 0.0 to 1.0)
+
+# ----------------------
+# MAIN CONFIDENCE FUNCTION
+# ----------------------
+def compute_confidence(delta_long, delta_short, iv_stability, surface_score, history_success, liquidity_penalty=0.0, debug=False):
+    """
+    Compute PMCC confidence score using weighted attributes.
+    Returns value in range [0.0, 1.0].
+    """
+    # Penalty for misaligned deltas (quadratic softness)
+    ideal_long = 0.70
+    ideal_short = 0.30
+    delta_penalty = ((delta_long - ideal_long)**2 + (delta_short - ideal_short)**2)
+    delta_score = max(0.0, 1.0 - delta_penalty / 0.04)  # Normalize based on max deviation
+
+    # Weighted sum
+    score = (
+        delta_score * WEIGHT_DELTA_ALIGNMENT +
+        iv_stability * WEIGHT_IV_STABILITY +
+        surface_score * WEIGHT_SURFACE_SCORE +
+        history_success * WEIGHT_HISTORY_SUCCESS
+    )
+
+        # Apply liquidity penalty last (optional, soft scaling)
+    score *= (1.0 - min(max(liquidity_penalty, 0.0), 1.0))
+
+    score = round(min(max(score, 0.0), 1.0), 4)
+
+    if debug:
+        print(f"Delta Score:        {delta_score:.4f}")
+        print(f"IV Stability:       {iv_stability:.4f}")
+        print(f"Surface Score:      {surface_score:.4f}")
+        print(f"History Success:    {history_success:.4f}")
+        print(f"Liquidity Penalty:  {liquidity_penalty:.4f}")
+        print(f"Final Confidence:   {score:.4f}")
+
+    return score  # Clamp and round
+
+# ----------------------
+# CONFIDENCE CLASSIFICATION HELPER
+# ----------------------
+
+def classify_confidence(score):
+    """
+    Classify a confidence score into decision buckets.
+    Returns one of: 'REJECT', 'LIMITED_OK', 'EXPAND_BIN', 'FULL_OK'
+    """
+    from global_variables import min_confidence_score, confidence_soft_cap, confidence_full_cap
+
+    if score < min_confidence_score:
+        return "REJECT"
+    elif score < confidence_soft_cap:
+        return "LIMITED_OK"
+    elif score < confidence_full_cap:
+        return "EXPAND_BIN"
+    else:
+        return "FULL_OK"
+
+
+# ----------------------
+# BATCH EVALUATION TOOL
+# ----------------------
+def evaluate_many(candidates):
+    """
+    Evaluate a list of candidates, each a dict with required keys:
+    'symbol', 'delta_long', 'delta_short', 'iv_stability', 'surface_score', 'history_success', 'liquidity_penalty'
+    Returns list of (symbol, score, classification)
+    """
+    results = []
+    for c in candidates:
+        score = compute_confidence(
+            c['delta_long'],
+            c['delta_short'],
+            c['iv_stability'],
+            c['surface_score'],
+            c['history_success'],
+            c.get('liquidity_penalty', 0.0)
+        )
+        classification = classify_confidence(score)
+        results.append((c['symbol'], score, classification))
+    return results
+
+
+# ----------------------
+# FUTURE IDEAS
+# ----------------------
+# - Include liquidity / bid-ask width penalty
+# - Include skew curvature as risk proxy
+# - Introduce momentum or earnings-date modifiers
+# - Make weights dynamic by regime

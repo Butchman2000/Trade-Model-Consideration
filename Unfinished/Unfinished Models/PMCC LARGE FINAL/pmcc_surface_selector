@@ -1,0 +1,82 @@
+# PMCC SURFACE HELPER MODULE
+"""
+Provides utility functions to convert trajectory path data across multiweek penalty surfaces
+into normalized confidence-ready scores. Keeps penalty score normalization logic separate
+from confidence model logic.
+"""
+
+# ----------------------
+# TRAJECTORY SCORING CONVERSION
+# ----------------------
+def score_surface_path(total_penalty, max_penalty_threshold):
+    """
+    Normalize a total path penalty into a 0.0–1.0 surface score.
+    The lower the penalty, the higher the score.
+
+    total_penalty: float
+        Accumulated weighted penalty from a trajectory across frustum layers
+    max_penalty_threshold: float
+        Maximum penalty expected before confidence should be zeroed out
+
+    Returns:
+        float – surface score (0.0 = unacceptable, 1.0 = optimal)
+    """
+    score = 1.0 - min(total_penalty / max_penalty_threshold, 1.0)
+    return round(score, 4)
+
+# ----------------------
+# ADDITIONAL SCORING STRATEGIES
+# ----------------------
+def score_surface_path_log_scaled(total_penalty, max_penalty_threshold):
+    """
+    Logarithmic falloff version. More sensitive to small penalties, flattens at higher ones.
+    """
+    import math
+    normalized = min(total_penalty / max_penalty_threshold, 1.0)
+    score = 1.0 - math.log1p(normalized * 9) / math.log1p(10)  # compress into 0–1
+    return round(score, 4)
+
+def score_surface_path_random_sampled(path_penalties, max_penalty_threshold):
+    """
+    Monte Carlo variant: assumes scattered sampling across a surface.
+    Uses the average penalty of all tested paths.
+    """
+    if not path_penalties:
+        return 0.0
+    avg_penalty = sum(path_penalties) / len(path_penalties)
+    return score_surface_path(avg_penalty, max_penalty_threshold)
+
+def score_surface_path_full_distribution(path_penalties, max_penalty_threshold):
+    """
+    Full evaluation version. Scores based on penalty distribution.
+    Penalizes high outliers harder (uses weighted mean).
+    """
+    if not path_penalties:
+        return 0.0
+    sorted_penalties = sorted(path_penalties)
+    weights = [(i + 1) for i in range(len(sorted_penalties))]  # increasing weight
+    weighted_sum = sum(p * w for p, w in zip(sorted_penalties, weights))
+    total_weight = sum(weights)
+    weighted_avg = weighted_sum / total_weight
+    return score_surface_path(weighted_avg, max_penalty_threshold)
+
+# ----------------------
+# FUTURE EXTENSIONS
+# - Inward-Drifting Satellite Probes:
+#   - For each of the outer X-shape test points, spawn a 'buddy' point
+#   - These buddy paths start from the same first-week tile but aim inward
+#   - Purpose: simulate cautious trajectories that avoid edge decay by gravitating
+#     toward the central optimal route
+#   - Buddies do not follow the same vector; they curve inward, simulating
+#     conservative corrections under projected narrowing of the profit window
+#   - Useful for visualizing survivability if the market tightens as expected
+
+# - Optional sigmoid-based scoring for soft threshold behavior:
+#   - Use when nearing a tight window and penalty rise should cause rapid confidence loss
+#   - Tunable midpoint and steepness allow for "soft cliff" shaping
+#   - Not enabled by default — consider only when trajectory accuracy is critical
+
+# ----------------------
+# - Alternative scoring shapes (log, sigmoid, capped quadratic)
+# - Frustum-specific penalty baselines or variance adjustments
+# - Penalty-to-score contextualization by symbol class (e.g., SPY vs PLTR)

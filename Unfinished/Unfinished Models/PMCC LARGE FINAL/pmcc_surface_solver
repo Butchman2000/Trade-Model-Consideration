@@ -1,0 +1,178 @@
+# PMCC Surface Solver (Pseudocode and Notes)
+# Updated to reflect pyramid-frustum approximation for longer-dated expirations
+
+import matplotlib.pyplot as plt
+import numpy as np
+from pmcc_surface_helper import score_surface_path, score_surface_path_log_scaled, score_surface_path_random_sampled, score_surface_path_full_distribution
+
+# ----- Data Structures -----
+
+class Tile:
+    def __init__(self, delta, iv, slope, curvature, liquidity_penalty):
+        self.delta = delta
+        self.iv = iv
+        self.slope = slope
+        self.curvature = curvature
+        self.penalty = liquidity_penalty
+
+class Surface:
+    def __init__(self, expiration_label, grid):
+        self.expiration = expiration_label
+        self.grid = grid  # 2D array of Tile objects
+
+class FrustumSurface:
+    def __init__(self, expiration_label, center_x, center_y, base_penalty, slope):
+        self.expiration = expiration_label
+        self.center_x = center_x  # Flat window center
+        self.center_y = center_y
+        self.base_penalty = base_penalty
+        self.slope = slope  # How quickly penalty increases from center
+
+    def get_penalty(self, x, y):
+        dx = abs(x - self.center_x)
+        dy = abs(y - self.center_y)
+        return self.base_penalty + self.slope * (dx + dy)
+
+# ----- Transition Cost Function -----
+
+def compute_transition_cost(tile_from, tile_to, angle_change):
+    refract_penalty = abs(angle_change) * tile_to.curvature
+    liquidity_penalty = tile_to.penalty
+    slope_penalty = tile_to.slope * 0.5
+    return refract_penalty + liquidity_penalty + slope_penalty
+
+# ----- Path Traversal Function -----
+
+class PathNode:
+    def __init__(self, x, y, surface_index, cost, angle):
+        self.x = x
+        self.y = y
+        self.surface_index = surface_index
+        self.cost = cost
+        self.angle = angle
+
+def near(node, target):
+    return abs(node.x - target.x) <= 1 and abs(node.y - target.y) <= 1
+
+def calculate_angle(a, b):
+    return np.arctan2(b.y - a.y, b.x - a.x)
+
+def get_neighbors(node, surface):
+    neighbors = []
+    for dx in [-1, 0, 1]:
+        for dy in [-1, 0, 1]:
+            if dx == 0 and dy == 0:
+                continue
+            nx, ny = node.x + dx, node.y + dy
+            if 0 <= nx < len(surface.grid) and 0 <= ny < len(surface.grid[0]):
+                neighbors.append(PathNode(nx, ny, node.surface_index + 1, 0, 0))
+    return neighbors
+
+def reconstruct_path(best_paths, end_node):
+    return end_node.cost
+
+def find_optimal_path(surfaces, start_tile, end_tile):
+    open_nodes = [PathNode(start_tile.x, start_tile.y, 0, 0, angle=0)]
+    best_paths = {}
+
+    while open_nodes:
+        current = open_nodes.pop(0)
+
+        if current.surface_index == len(surfaces) - 1:
+            if near(current, end_tile):
+                return reconstruct_path(best_paths, current)
+
+        next_surface = surfaces[current.surface_index + 1]
+        for neighbor in get_neighbors(current, next_surface):
+            angle_change = calculate_angle(current, neighbor)
+            transition_cost = compute_transition_cost(
+                surfaces[current.surface_index].grid[current.x][current.y],
+                next_surface.grid[neighbor.x][neighbor.y],
+                angle_change
+            )
+            total_cost = current.cost + transition_cost
+            node_key = (neighbor.x, neighbor.y, neighbor.surface_index)
+
+            if node_key not in best_paths or total_cost < best_paths[node_key].cost:
+                best_paths[node_key] = current
+                open_nodes.append(PathNode(
+                    neighbor.x, neighbor.y,
+                    current.surface_index + 1,
+                    total_cost,
+                    angle_change
+                ))
+
+    return None
+
+# ----- Penalty to Surface Score Adapter -----
+
+def evaluate_path_and_score(surfaces, start_tile, end_tile, max_penalty_threshold=2.5):
+    total_penalty = find_optimal_path(surfaces, start_tile, end_tile)
+    if total_penalty is None:
+        return 0.0
+    return score_surface_path(total_penalty, max_penalty_threshold)
+
+# ----- Visualization Snippet -----
+def visualize_surface(surface):
+    grid_size_x = len(surface.grid)
+    grid_size_y = len(surface.grid[0])
+    cost_map = np.zeros((grid_size_x, grid_size_y))
+
+    for i in range(grid_size_x):
+        for j in range(grid_size_y):
+            cost_map[i][j] = surface.grid[i][j].penalty + surface.grid[i][j].slope + surface.grid[i][j].curvature
+
+    plt.imshow(cost_map, cmap='hot', interpolation='nearest')
+    plt.title(f"Penalty Landscape for {surface.expiration}")
+    plt.colorbar(label='Composite Penalty')
+    plt.xlabel("Strike Index")
+    plt.ylabel("IV Index")
+    plt.show()
+
+# ----- Example Usage + Scoring Test -----
+if __name__ == "__main__":
+    dummy_grid = []
+    for i in range(10):
+        row = []
+        for j in range(10):
+            tile = Tile(
+                delta=0.1 * i,
+                iv=0.15 + 0.01 * j,
+                slope=np.sin(i / 3) * 0.2,
+                curvature=np.cos(j / 3) * 0.1,
+                liquidity_penalty=np.random.rand() * 0.05
+            )
+            row.append(tile)
+        dummy_grid.append(row)
+
+    dummy_surface = Surface("2wk", dummy_grid)
+    visualize_surface(dummy_surface)
+
+    # Approximate long-dated surface using frustum model
+    frustum = FrustumSurface("6wk", center_x=5, center_y=5, base_penalty=0.05, slope=0.03)
+    frustum_map = np.zeros((10, 10))
+    for i in range(10):
+        for j in range(10):
+            frustum_map[i][j] = frustum.get_penalty(i, j)
+
+    plt.imshow(frustum_map, cmap='coolwarm', interpolation='nearest')
+    plt.title(f"Frustum Approximation: {frustum.expiration}")
+    plt.colorbar(label='Penalty')
+    plt.xlabel("Strike Index")
+    plt.ylabel("IV Index")
+    plt.show()
+
+    # ----- Scoring a Path -----
+    print("\n--- Path Evaluation ---")
+    start_tile = PathNode(2, 2, 0, 0, 0)
+    end_tile = PathNode(7, 7, len(dummy_grid) - 1, 0, 0)
+    dummy_surfaces = [dummy_surface, dummy_surface, dummy_surface]
+
+    score = evaluate_path_and_score(dummy_surfaces, start_tile, end_tile)
+    print(f"Path Score (normalized): {score}")
+
+# ----- Notes -----
+# - Simplified long-dated surfaces as truncated pyramids (frustums) with moveable flat tops
+# - Efficient for 3–6 week or 6-month legs where exact modeling is expensive
+# - Key is to track the movable low-penalty zone and steepen cost outside it
+# - Allows lightweight approximations for rapid scans across watchlist

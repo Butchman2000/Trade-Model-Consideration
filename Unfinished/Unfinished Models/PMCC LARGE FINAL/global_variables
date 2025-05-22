@@ -1,0 +1,115 @@
+# PURPOSE
+"""
+This script lays out a framework for evaluating PMCC (Poor Man's Covered Call) trajectory models
+using simplified constraints and parameter inputs. The structure is designed for clarity and brute-force
+experimentation. It avoids Python shortcuts and emphasizes transparency and annotation to support
+conceptual understanding for those newer to the language.
+"""
+
+# ----------------------
+# GLOBAL VARIABLES (defaults assigned, but values can be overridden or brute-forced later)
+# ----------------------
+
+# Capital allocation parameters
+initial_capital = 250000         # Starting account size in USD
+risk_budget_pct = 0.02           # Risk per trade (2%)
+max_drawdown_pct = 0.10          # Total max allowable drawdown
+
+# Volatility sensitivity thresholds (brute-force range suggestion in comments)
+vix_threshold_abort = 40         # Auto-abandon above this VIX  # try: 35, 40, 45, 50, 55
+vix_warning_level = 32           # Warning begins                # try: 28, 30, 32, 34, 36
+vix_safe_max = 24                # Comfortable VIX ceiling       # try: 20, 22, 24, 26, 28
+
+# Delta alignment parameters for PMCC targeting
+ideal_short_delta = 0.30         # Optimal delta for short call  # try: 0.25, 0.30, 0.35, 0.40, 0.45
+ideal_long_delta = 0.70          # Optimal delta for long call   # try: 0.60, 0.65, 0.70, 0.75, 0.80
+
+# Confidence score boundaries for decision gating
+min_confidence_score = 0.65      # Below this, do not proceed
+confidence_soft_cap = 0.80       # Above this, allow bin expansion
+confidence_full_cap = 0.92       # Above this, unlock full overflow
+
+# Frustum modeling controls
+frustum_slope_min = 0.015        # Shallow penalty slope
+frustum_slope_max = 0.045        # Steep penalty slope
+frustum_base_penalty = 0.05      # Flat-top center baseline
+frustum_bulge_active = True      # Whether to allow bulge/curvature bias
+
+# Trajectory simulation parameters
+max_weeks_forward = 6            # Max number of weeks to simulate
+trajectory_sample_count = 20     # Number of random paths to evaluate
+path_penalty_ceiling = 3.0       # Max viable total penalty for scoring
+
+# ----------------------
+# CONSTRAINTS LIST
+# ----------------------
+
+# These rules define valid configurations for PMCC setups and the limits of acceptable behavior.
+constraints = [
+    "Short call delta must be between 0.25 and 0.45",
+    "Long call delta must be between 0.60 and 0.80",
+    "VIX above 40 triggers auto-abandon of strategy",
+    "Max risk per trade is capped at 2% of initial capital",
+    "Cannot violate total drawdown of 10%"
+]
+
+# ----------------------
+# PLACEHOLDER FOR LOGIC LAYER
+
+# Core PMCC Evaluation Logic
+
+def evaluate_pmcc_path(vix_value, surface_score, delta_long, delta_short):
+    """
+    Given market inputs and a computed surface score, determine PMCC viability.
+    Returns decision (str) and diagnostics (dict).
+    """
+    diagnostics = {}
+
+    # Abort check based on VIX
+    if vix_value >= vix_threshold_abort:
+        diagnostics['reason'] = 'VIX exceeds abort threshold'
+        return "ABORT", diagnostics
+
+    # Delta alignment check
+    if not (0.25 <= delta_short <= 0.45):
+        diagnostics['reason'] = 'Short call delta out of bounds'
+        return "REJECT", diagnostics
+
+    if not (0.60 <= delta_long <= 0.80):
+        diagnostics['reason'] = 'Long call delta out of bounds'
+        return "REJECT", diagnostics
+
+    # Surface score check
+    diagnostics['surface_score'] = surface_score
+    if surface_score < min_confidence_score:
+        diagnostics['reason'] = 'Surface score too low'
+        return "REJECT", diagnostics
+    elif surface_score < confidence_soft_cap:
+        diagnostics['reason'] = 'Moderate confidence — use working capital only'
+        return "LIMITED_OK", diagnostics
+    elif surface_score < confidence_full_cap:
+        diagnostics['reason'] = 'Strong confidence — soft overflow permitted'
+        return "EXPAND_BIN", diagnostics
+    else:
+        diagnostics['reason'] = 'Full confidence — max exposure permitted'
+        return "FULL_OK", diagnostics
+# ----------------------
+
+# This is where future logic will be written:
+# - Evaluation of current market conditions
+# - Calculation of frustum window based on VIX
+# - Assessment of trajectory feasibility from short to long leg
+# - Estimation of correction burns needed, if any
+# - Decision to proceed, adjust, or abandon
+
+# EXAMPLE STRUCTURE (future refactor):
+# def evaluate_pmcc_path(...):
+#     # Perform calculations and decision-making here
+#     return outcome, diagnostics
+
+# ----------------------
+# NOTES
+# ----------------------
+# - Every numeric parameter above can be looped over later for brute-force search
+# - Python structures kept verbose and instructional
+# - Ideal for experimentation, later optimization, and visual feedback integration

@@ -1,0 +1,196 @@
+# TensorFlow and Keras helps with inputing load data set, define NN, train in few lines of code
+
+# INITIAL TRAJECTORY MODEL (ROUGH DRAFT)
+"""
+This script models the PMCC path from entry (initial surface) through intermediate frustum
+approximations (windowed weeks) toward the LEAP (Earth intercept). It is a structural draft,
+intended to evolve as logic is validated. Placeholders and approximations are included.
+
+The code is written for clarity, with verbose comments to aid understanding for users newer to Python.
+"""
+
+import numpy as np
+import random
+
+# ----------------------
+# GLOBALS AND PARAMETER SETUP
+# ----------------------
+VIX = 26  # Volatility index (placeholder)
+current_week = 1
+final_week = 6  # Simulate from week 1 through LEAP
+
+# Frustum behavior modifier
+USE_FRUSTUM_BULGE = True  # Toggle bulge logic on or off
+
+week_stages = ["initial", "window1", "window2", "window3", "window4", "earth"]
+
+vix_frustum_scaling = {
+    "easy": 1.0,
+    "moderate": 0.8,
+    "caution": 0.6,
+    "warning": 0.4,
+    "tight": 0.2
+}
+
+base_weight_increment = 0.3
+softening_multiplier = 0.8
+
+# ----------------------
+# CLASSES
+# ----------------------
+class Tile:
+    def __init__(self, penalty):
+        self.penalty = penalty
+
+class FrustumSurface:
+    def __init__(self, week, center_x, center_y, base_penalty, slope, scale=1.0, bulge_side=None, bulge_radius=3):
+        self.week = week
+        self.center_x = center_x
+        self.center_y = center_y
+        self.base_penalty = base_penalty
+        self.slope = slope
+        self.scale = scale
+        self.bulge_side = bulge_side
+        self.bulge_radius = bulge_radius
+
+    def get_penalty(self, x, y):
+        dx = abs(x - self.center_x)
+        dy = abs(y - self.center_y)
+        base = self.base_penalty + self.slope * (dx + dy) / self.scale
+
+        if self.bulge_side:
+            in_bulge = False
+            if self.bulge_side == 'left' and x < self.center_x and abs(x - self.center_x) <= self.bulge_radius:
+                in_bulge = True
+            elif self.bulge_side == 'right' and x > self.center_x and abs(x - self.center_x) <= self.bulge_radius:
+                in_bulge = True
+            elif self.bulge_side == 'top' and y < self.center_y and abs(y - self.center_y) <= self.bulge_radius:
+                in_bulge = True
+            elif self.bulge_side == 'bottom' and y > self.center_y and abs(y - self.center_y) <= self.bulge_radius:
+                in_bulge = True
+            if in_bulge:
+                base *= 0.7
+
+        return base
+
+class FullSurface:
+    def __init__(self, week, grid):
+        self.week = week
+        self.grid = grid
+
+    def get_penalty(self, x, y):
+        return self.grid[x][y].penalty
+
+# ----------------------
+# FUNCTIONS
+# ----------------------
+def generate_initial_surface():
+    grid = []
+    for i in range(10):
+        row = []
+        for j in range(10):
+            penalty = np.random.rand() * 0.1
+            row.append(Tile(penalty))
+        grid.append(row)
+    return FullSurface(week="initial", grid=grid)
+
+def generate_frumstum_surface(week, scale):
+    cx = min(5, 2 + week)
+    cy = 5
+    bulge = 'right' if USE_FRUSTUM_BULGE and week in [3, 4] else None
+    return FrustumSurface(
+        week=week,
+        center_x=cx,
+        center_y=cy,
+        base_penalty=0.05,
+        slope=0.02 * week,
+        scale=scale,
+        bulge_side=bulge
+    )
+
+def determine_scale_from_vix(vix):
+    if vix <= 24:
+        return vix_frustum_scaling["easy"]
+    elif vix <= 28:
+        return vix_frustum_scaling["moderate"]
+    elif vix <= 32:
+        return vix_frustum_scaling["caution"]
+    elif vix <= 36:
+        return vix_frustum_scaling["warning"]
+    else:
+        return vix_frustum_scaling["tight"]
+
+# ----------------------
+# TRAJECTORY PLANNER
+# ----------------------
+def simulate_simple_path(trajectory_layers, start_x, start_y):
+    total_penalty = 0.0
+    x, y = start_x, start_y
+    path = [(x, y)]
+
+    for i, layer in enumerate(trajectory_layers):
+        week_weight = 1.0 + i * base_weight_increment
+        adjusted_weight = week_weight * softening_multiplier
+
+        penalty = layer.get_penalty(x, y)
+        total_penalty += penalty * adjusted_weight
+
+        if isinstance(layer, FrustumSurface):
+            if x < layer.center_x: x += 1
+            elif x > layer.center_x: x -= 1
+            if y < layer.center_y: y += 1
+            elif y > layer.center_y: y -= 1
+
+        path.append((x, y))
+
+    return total_penalty, path
+
+# ----------------------
+# INITIALIZATION
+# ----------------------
+initial_surface = generate_initial_surface()
+trajectory_layers = [initial_surface]
+
+vix_scale = determine_scale_from_vix(VIX)
+
+for wk in range(2, final_week):
+    frustum = generate_frumstum_surface(wk, scale=vix_scale)
+    trajectory_layers.append(frustum)
+
+leap = FrustumSurface(week="earth", center_x=5, center_y=5, base_penalty=0.03, slope=0.01, scale=1.0)
+trajectory_layers.append(leap)
+
+# ----------------------
+# RUN PATH SIMULATION + SURFACE SCORING
+# ----------------------
+start_x, start_y = 2, 2
+penalty, path = simulate_simple_path(trajectory_layers, start_x, start_y)
+
+print("Simulated path:", path)
+print("Total weighted penalty:", penalty)
+
+# --- Surface Score (Normalized 0.0 to 1.0) + Confidence Evaluation ---
+from pmcc_surface_helper import score_surface_path
+
+# This threshold can later be tuned from global config
+max_penalty_threshold = 3.0
+surface_score = score_surface_path(penalty, max_penalty_threshold)
+print("Surface score (0.0–1.0):", surface_score)
+
+# --- Confidence Decision Based on Logic Layer ---
+from global_variables import min_confidence_score, confidence_soft_cap, confidence_full_cap, ideal_long_delta, ideal_short_delta, VIX
+from pmcc_confidence_model import compute_confidence
+from global_variables import evaluate_pmcc_path  # Ensure function is accessible
+
+confidence = compute_confidence(
+    delta_long=ideal_long_delta,
+    delta_short=ideal_short_delta,
+    iv_stability=0.9,
+    surface_score=surface_score,
+    history_success=0.85
+)
+
+decision, diagnostics = evaluate_pmcc_path(VIX, surface_score, ideal_long_delta, ideal_short_delta)
+print("Confidence Score (0.0–1.0):", confidence)
+print("Evaluation Decision:", decision)
+print("Diagnostics:", diagnostics)

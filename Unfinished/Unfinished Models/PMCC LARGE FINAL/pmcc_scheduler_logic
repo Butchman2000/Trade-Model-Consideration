@@ -1,0 +1,105 @@
+# PMCC SCHEDULER LOGIC - BIN MANAGEMENT CORE
+"""
+This section defines capital allocation rules and safety logic for managing the PMCC bin.
+This bin holds the most expensive synthetic covered call structures, and is limited by account capital.
+All behavior here must be deterministic, exhaustively documented, and fail-safe.
+"""
+
+# ----------------------
+# GLOBAL CAPITAL PARAMETERS
+# ----------------------
+# These are calculated at the beginning of each trading day.
+# All PMCC entries and adjustments must respect these values.
+
+ACCOUNT_TOTAL_EOD = 250000  # Starting account value in USD (end of previous day)
+PMCC_BIN_MAX = 0.06         # 6% hard allocation limit
+PMCC_MARGIN_TARGET = 0.0125 # 1.25% reserved margin (not spent)
+PMCC_BIN_WORKING = PMCC_BIN_MAX - PMCC_MARGIN_TARGET  # Normal operating capital: 4.75%
+PMCC_BIN_CONFIDENCE_OVERFLOW = 0.08  # Upper soft cap if confidence is high
+
+# Convert to absolute dollar terms
+pmcc_cap_max = ACCOUNT_TOTAL_EOD * PMCC_BIN_MAX
+pmcc_cap_working = ACCOUNT_TOTAL_EOD * PMCC_BIN_WORKING
+pmcc_margin_buffer = ACCOUNT_TOTAL_EOD * PMCC_MARGIN_TARGET
+pmcc_cap_confident = ACCOUNT_TOTAL_EOD * PMCC_BIN_CONFIDENCE_OVERFLOW
+
+# ----------------------
+# BIN STATE
+# ----------------------
+# Holds tuples of (symbol, cost_basis, confidence_score)
+PMCC_BIN = []
+
+# ----------------------
+# BIN FUNCTIONS
+# ----------------------
+
+from pmcc_confidence_model import compute_confidence
+from global_variables import evaluate_pmcc_path, ideal_long_delta, ideal_short_delta, VIX
+
+
+def try_add_pmcc_candidate(symbol, cost_estimate, surface_score, iv_stability=0.9, history_success=0.85):
+    """
+    Full evaluation and insertion attempt for a new PMCC candidate.
+    - Computes confidence from surface score and technicals
+    - Applies path evaluation logic
+    - Adds to bin if allowed by logic + exposure rules
+    Returns a (decision, confidence_score, diagnostics) tuple
+    """
+    confidence_score = compute_confidence(
+        delta_long=ideal_long_delta,
+        delta_short=ideal_short_delta,
+        iv_stability=iv_stability,
+        surface_score=surface_score,
+        history_success=history_success
+    )
+
+    decision, diagnostics = evaluate_pmcc_path(VIX, surface_score, ideal_long_delta, ideal_short_delta)
+
+    if decision in ["LIMITED_OK", "EXPAND_BIN", "FULL_OK"]:
+        added = add_pmcc_position(symbol, cost_estimate, confidence_score)
+        if added:
+            diagnostics['bin_status'] = "ADDED"
+        else:
+            diagnostics['bin_status'] = "REJECTED_BIN_FULL"
+    else:
+        diagnostics['bin_status'] = "NOT_ATTEMPTED"
+
+    return decision, confidence_score, diagnostics
+def bin_total_exposure():
+    """Return total exposure of active PMCCs in the bin (float, USD)"""
+    return sum([entry[1] for entry in PMCC_BIN])
+
+def bin_is_full(strict=True):
+    """
+    Determine whether the bin is full.
+    - strict=True respects the 6% hard cap.
+    - strict=False allows extension to 8% if confidence permits.
+    """
+    exposure = bin_total_exposure()
+    cap = pmcc_cap_max if strict else pmcc_cap_confident
+    return exposure >= cap
+
+def can_add_to_bin(cost_estimate, confidence_score):
+    """
+    Decide whether a new PMCC position can be added.
+    - Requires margin buffer to remain intact
+    - Confidence score (0–1) adjusts limit access
+    """
+    new_exposure = bin_total_exposure() + cost_estimate
+
+    if confidence_score < 0.7:
+        return new_exposure <= pmcc_cap_working
+    else:
+        return new_exposure <= pmcc_cap_confident
+
+def add_pmcc_position(symbol, cost_basis, confidence_score):
+    """
+    Add a new PMCC position to the bin if allowed.
+    """
+    if can_add_to_bin(cost_basis, confidence_score):
+        PMCC_BIN.append((symbol, cost_basis, confidence_score))
+        print(f"[INFO] Added {symbol} to PMCC_BIN: ${cost_basis:.2f}, confidence={confidence_score}")
+        return True
+    else:
+        print(f"[WARN] Rejected {symbol}: cost=${cost_basis:.2f}, confidence={confidence_score}")
+        return False

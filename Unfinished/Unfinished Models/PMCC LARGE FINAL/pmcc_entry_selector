@@ -1,0 +1,56 @@
+# PMCC ENTRY SELECTOR
+"""
+This module identifies and evaluates candidate short calls for the first week (Week 1)
+of a PMCC strategy. It filters for market viability, surface quality, and forward
+trajectory potential. This is the critical entry gate for capital deployment.
+"""
+
+# ----------------------
+# PRIMARY ENTRY POINT
+# ----------------------
+def evaluate_week1_candidates(option_chain, surface, context):
+    """
+    Evaluate all short-call candidates in the current surface.
+    Select those that:
+    - Are within target delta range (e.g., 0.25–0.45)
+    - Meet liquidity and bid-ask spread criteria
+    - Sit on stable surface points (low penalty, smooth curvature)
+
+    Inputs:
+        option_chain: list of dicts with market data per strike
+        surface: 2D tile grid for week 1
+        context: dict of global parameters or constraints
+
+    Returns:
+        list of dicts with selected candidates and scores
+    """
+    pass
+
+# ----------------------
+# SUPPORT FUNCTIONS
+# ----------------------
+def is_viable_short_call(candidate, context):
+    """
+    Return True if the candidate option passes:
+    - delta bounds
+    - open interest minimum
+    - bid-ask spread max
+    """
+    pass
+
+def score_short_call_tile(tile, context):
+    """
+    Return a numerical score for the candidate surface tile.
+    Consider:
+    - penalty
+    - curvature
+    - slope
+    - delta proximity to ideal
+    """
+    pass
+
+def select_best_candidates(scored_candidates, max_count=3):
+    """
+    From a list of viable scored candidates, return the top N by score.
+    """
+    pass

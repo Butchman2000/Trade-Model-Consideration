@@ -1,16 +1,22 @@
-# Program: trade_coordinator
+# Program: trade_coordinator.py
 # Author: Brian Anderson
 # Origin Date:
 # Version 2.0
 #
 # Purpose:
-#    /Coordinates Signal isolation system (SIS), Risk execution protocol (REP), and Tax filter (TAX)
-#    /A portable, semi-autonomous strategy governance layer. 
+#    /Coordinates the following:
+#    /Signal isolation system (SIS); file name: signal_isolation_system.py
+#    /Risk execution protocol (REP); file name: risk_execution_protocol.py
+#    /Tax filter (TAX); file name: to be determined, incorporated elsewhere
+#
+#    /This is a portable, semi-autonomous strategy governance layer. 
 #    /Logs, validates, and structures trade decision data
+#
 # Includes: margin, corporate actions, and secure preprocessing safeguards
 # Includes: basic margin risk awareness for trade style + permission mismatch
 # Includes: symbol normalization, split/spinoff tracking, and passive metadata flags
 # NOTE: Be sure to apply split-adjusted criteria to noise and time evaluation logic elsewhere.
+#
 # NOTE: Cash accounts are subject to T+1 use delays and T+2 withdrawal times.
 #       Futures accounts have MTM capital rules and T+1 withdrawal timing.
 
@@ -23,16 +29,18 @@
 -Documents every judgment for future clarity
 
  This System Was Meant To:
--Restore Trust in Your Own Judgment
+-Restore Trust in My Own Judgment
 -Move You Toward Institutional Readiness
 -Protect You from Invisible Traps (unseen and structural)
 -Work towards Delegation of Execution
 '''
 
 import time
-from collections import deque
+# from collections import deque  # Correct this when proper pathway is discovered
 
-class RateLimiter:  # Controls the number of incoming signals per second to prevent overload
+# The RateLimiter class controls the number of incoming signals per second, to prevent overload.
+
+class RateLimiter: 
     def __init__(self, max_packets_per_sec=5, burst_limit=10):  # Initializes rate limits
         self.timestamps = deque()
         self.max_packets_per_sec = max_packets_per_sec

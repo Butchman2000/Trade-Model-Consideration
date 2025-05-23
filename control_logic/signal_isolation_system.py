@@ -1,12 +1,13 @@
-# Program: signal_isolation_system
+# Program: signal_isolation_system.py
 # Architect: Brian Anderson
 # Date: 09April2025
 # Version: 1.1
 #
 # Purpose:
 #    /This module governs which signals are allowed to proceed to execution.
-#    /It assumes temporal coherence + noise suppression already handled upstream.
-#
+#    /It assumes temporal coherence + noise suppression is already handled upstream.
+#    /CAUTION: This program navigates alteration of self-override capability truth-value.
+#    
 # Includes:
 # - Multi-factor signal validation
 # - Manual override logic with audit trail

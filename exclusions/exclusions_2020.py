@@ -1,9 +1,10 @@
-# Program: Backtest Exclusion Criterion for 2020
+# Program: exclusions_2020.py
 # Author: Brian Anderson
 # Origin Date: 30April2025
 # Version: 1.0
 # 
 # Purpose:
+#    /Backtest exclusion criterion for the year of 2020
 #   /Assemble market dates for critical days that most strongly affect market activity.
 #   /Specifies spans of time for which alteration of trading activity should be considered.
 

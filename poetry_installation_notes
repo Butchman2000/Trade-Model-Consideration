@@ -1,7 +1,6 @@
-# Program: Not Applicable; Name: poetry_installation_notes
-# Gathered from https:/python-poetry.org/docs/
+Gathered from https:/python-poetry.org/docs/
 
-### POETRY PROGRAM RELATED ###
+# POETRY PROGRAM RELATED #
 
 poetry-core
 install.python-poetry.org

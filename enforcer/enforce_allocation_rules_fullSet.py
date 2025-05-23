@@ -1,10 +1,10 @@
-# Module: enforce_allocation_rules_oneTOfive.py
+# Module: enforce_allocation_rules_fullSet.py
 # Author: Brian Anderson
 # Origin Date: 11May2025
-# Version: 1.1
+# Version: 1.3
 #
 # Purpose:
-#    /Begin converting risk allocation rules into code-based enforcement.
+#    /Convert eleven necessary risk allocation rules into code-based enforcement mechanic.
 
 '''
 ========== RULE BASED FRAMEWORK ==========
@@ -27,7 +27,27 @@
 # rule 5 – futures max 5% allocation, 3.75% margin exposure
 # detect any bin involving futures models; sum their allocation; flag if above limit
 
-(continued in 'enforce_allocation_rules_sixTOeleven')
+# rule 6 – margin multiplier per strategy
+# apply model-specific multiplier (e.g. selling puts = 1.5x exposure)
+# this informs whether 4.5% actual allocation = 6.75% margin usage
+
+# rule 7 – slippage buffer
+# assume +1.5% for each options trade; ensure cumulative account use remains within envelope
+
+# rule 8 – one bin rotation per day
+# requires external state tracking: when was the bin last traded?
+# if recent: deny rotation
+
+# rule 9 – nightly rebalance
+# external trigger re-evaluates account balance and usage
+# if violations detected, mark bins as shut for next day
+
+# rule 10 – model-bin mapping is fixed
+# enforce that each bin number maps permanently to its assigned model name
+# reject reassignment attempts
+
+# rule 11 – warning color persistence
+# if triggered, each warning state must persist for a defined duration (e.g. red = 2 days minimum)
 
 ========== END OF RULE LIST ==========
 '''
@@ -49,6 +69,7 @@
 
 # all outputs are assumed to return adjusted bin_weights or flag warnings
 
+# === With respect to rule number One ===
 
 def enforce_liquidity_reserve_only(bin_weights, constraints):
     '''Rule 1 only: enforce 10% liquidity reserve'''
@@ -63,6 +84,7 @@ def enforce_liquidity_reserve_only(bin_weights, constraints):
 
     return bin_weights
 
+# === With respect to rule number Two ===
 
 def enforce_manual_reserve_only(bin_weights, constraints):
     '''Rule 2 only: reserve space for manual trading (typically 10%)'''
@@ -77,6 +99,7 @@ def enforce_manual_reserve_only(bin_weights, constraints):
 
     return bin_weights
 
+# === With respect to rule number Three ===
 
 def enforce_per_bin_maximum(bin_weights, constraints):
     '''Rule 3 enforcement: enforce a per-bin maximum allocation'''
@@ -90,6 +113,7 @@ def enforce_per_bin_maximum(bin_weights, constraints):
 
     return bin_weights, flagged_bins
 
+# === With respect to rule number Four ===
 
 def enforce_bin_count_and_overlap(bin_weights, bin_metadata):
     '''Rule 4: cap number of bins and enforce unique underlying spread'''
@@ -111,6 +135,7 @@ def enforce_bin_count_and_overlap(bin_weights, bin_metadata):
 
     return True, None
 
+# === With respect to rule number Five ===
 
 def enforce_futures_allocation(bin_weights, bin_metadata):
     '''Rule 5: limit total exposure to futures strategies'''
@@ -127,7 +152,6 @@ def enforce_futures_allocation(bin_weights, bin_metadata):
         return False, 'futures allocation exceeds maximum permitted exposure'
 
     return True, None
-
 
 # Enforcement driver function (placeholder)
 # Calls individual rule enforcement in sequence
@@ -147,3 +171,86 @@ def enforce_allocation_rules(bin_weights, constraints, bin_metadata):
 
     return bin_weights  # final output with all limits applied
 
+# === PROCEED WITH RULES SIX THROUGH ELEVEN AS FOLLOWS ===
+
+# === With respect to rule Six ===
+
+def enforce_margin_multiplier(bin_weights, bin_metadata, constraints):
+    '''Estimate margin exposure using each strategy's leverage multiplier'''
+    total_margin_used = 0.0
+    margin_threshold = 1.0 - constraints['liquidity_reserve'] - constraints['manual_trading_allocation']
+
+    for bin_name, alloc in bin_weights.items():
+        metadata = bin_metadata.get(bin_name, {})
+        multiplier = metadata.get('margin_mult', 1.0)
+        margin_used = alloc * multiplier
+        total_margin_used += margin_used
+
+    if total_margin_used > margin_threshold:
+        return False, f"Estimated margin usage {total_margin_used:.2%} exceeds threshold {margin_threshold:.2%}"
+    return True, None
+
+# === With respect to rule Seven ===
+
+def enforce_slippage_buffer(bin_weights, bin_metadata, constraints):
+    '''Estimate total slippage impact for option bins'''
+    slippage_per_option_bin = 0.015  # 1.5%
+    estimated_slip = 0.0
+
+    for bin_name in bin_weights:
+        if bin_metadata.get(bin_name, {}).get('type') == 'options':
+            estimated_slip += slippage_per_option_bin
+
+    if estimated_slip > constraints.get('slippage_budget', 0.05):
+        return False, f"Slippage risk exceeds buffer: {estimated_slip:.2%}"
+    return True, None
+
+# === With respect to rule Eight ===
+
+def enforce_bin_rotation_lock(bin_metadata, current_date):
+    '''Prevent bins from rotating more than once per day'''
+    for bin_name, meta in bin_metadata.items():
+        last_rotated = meta.get('last_rotation_date')
+        if last_rotated == current_date:
+            return False, f"Bin {bin_name} already rotated today"
+    return True, None
+
+# === With respect to rule Nine ===
+
+def enforce_nightly_rebalance(bin_status_log):
+    '''Placeholder – would be called externally overnight to apply persistent state changes'''
+    for bin_name, status in bin_status_log.items():
+        if status.get('violation_today'):
+            status['active'] = False
+            status['lock_until'] = status.get('date') + timedelta(days=1)
+    return bin_status_log
+
+# === With respect to rule Ten ===
+
+def enforce_fixed_bin_model_mapping(bin_metadata, fixed_assignments):
+    '''Each bin must retain its original model identity'''
+    for bin_name, meta in bin_metadata.items():
+        expected_model = fixed_assignments.get(bin_name)
+        actual_model = meta.get('model')
+        if actual_model != expected_model:
+            return False, f"Bin {bin_name} assigned to unexpected model: {actual_model}"
+    return True, None
+
+# === With respect to rule Eleven ===
+
+def enforce_warning_persistence(bin_alert_state, today_date):
+    '''Ensure RED/YELLOW states persist for a minimum period'''
+    required_persistence = {
+        'red': 2,
+        'yellow': 1
+    }
+
+    for bin_name, alert in bin_alert_state.items():
+        level = alert.get('level')
+        date_set = alert.get('since')
+        days_elapsed = (today_date - date_set).days
+        if level in required_persistence and days_elapsed < required_persistence[level]:
+            return False, f"Bin {bin_name} must remain {level.upper()} for {required_persistence[level]} days"
+    return True, None
+
+# Note: There may be need, here, to collectively activate some mechanic of rules six through eleven.  Review them to be sure.

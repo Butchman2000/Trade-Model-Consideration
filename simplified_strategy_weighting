@@ -1,0 +1,76 @@
+# STRATEGY WEIGHTING MODEL (SIMPLIFIED)
+"""
+This is a basic framework to assign relative weights to different options strategies
+based on a high-level view of current market behavior. These weights are normalized
+and can be used to guide position sizing or ranking.
+"""
+
+# Assumed inputs:
+# - market_trend: 'up', 'flat', or 'down'
+# - vix_level: numerical VIX index (e.g. 16, 24, 32)
+# - skew_bias: 'positive', 'neutral', or 'negative'
+
+
+def get_strategy_weights(market_trend, vix_level, skew_bias):
+    """
+    Return a dictionary of strategy weights given market conditions.
+    """
+    weights = {
+        'equity': 1.0,
+        'covered_call': 1.0,
+        'pmcc': 1.0,
+        'cash_put': 1.0,
+        'diagonal_call': 1.0,
+        'calendar_call': 1.0,
+        'vertical_spread': 1.0,
+        'naked_call': 0.0,
+        'straddle': 1.0,
+        'iron_condor': 1.0,
+        'leap_call': 1.0
+    }
+
+    # Adjust based on trend
+    if market_trend == 'up':
+        weights['leap_call'] += 0.8
+        weights['pmcc'] += 0.4
+        weights['vertical_spread'] += 0.5
+        weights['covered_call'] += 0.2
+        weights['cash_put'] += 0.2
+    elif market_trend == 'down':
+        weights['iron_condor'] -= 0.3
+        weights['straddle'] += 0.5
+        weights['naked_call'] += 0.1
+        weights['calendar_call'] -= 0.3
+        weights['diagonal_call'] -= 0.2
+    elif market_trend == 'flat':
+        weights['iron_condor'] += 0.6
+        weights['calendar_call'] += 0.4
+        weights['covered_call'] += 0.3
+        weights['pmcc'] += 0.2
+        weights['straddle'] -= 0.4
+        weights['leap_call'] -= 0.3
+
+    # Adjust based on VIX
+    if vix_level > 30:
+        weights['straddle'] += 0.4
+        weights['naked_call'] = 0.0
+        weights['leap_call'] -= 0.4
+    elif vix_level < 17:
+        weights['calendar_call'] -= 0.2
+        weights['straddle'] -= 0.3
+        weights['covered_call'] += 0.1
+        weights['pmcc'] += 0.2
+
+    # Adjust based on skew
+    if skew_bias == 'positive':
+        weights['cash_put'] += 0.2
+        weights['covered_call'] += 0.2
+    elif skew_bias == 'negative':
+        weights['leap_call'] += 0.2
+        weights['calendar_call'] += 0.2
+
+    # Clamp weights to minimum 0
+    for k in weights:
+        weights[k] = max(0.0, round(weights[k], 2))
+
+    return weights

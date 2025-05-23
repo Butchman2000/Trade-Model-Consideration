@@ -1,6 +1,7 @@
-# Program: risk_execution_protocol
+# Program: risk_execution_protocol.py
 # Architect: Brian Anderson
 # Date: 09April2025
+# Version: 1.0
 #
 # Purpose:
 #    /This module defines the risk boundaries, failure thresholds,

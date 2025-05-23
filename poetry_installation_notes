@@ -1,8 +1,10 @@
+# Program: Not Applicable; Name: poetry_installation_notes
+# Gathered from https:/python-poetry.org/docs/
+
+### POETRY PROGRAM RELATED ###
 
 poetry-core
 install.python-poetry.org
-
-https://python-poetry.org/docs/
 
 Introduction
 Poetry is a tool for dependency management and packaging in Python. It allows you to declare the libraries your project depends on and it will manage (install/update) them for you. Poetry offers a lockfile to ensure repeatable installs, and can build your project for distribution.

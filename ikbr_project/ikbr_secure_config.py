@@ -1,7 +1,7 @@
-# Program: ikbr_secure_config
+# Program: ikbr_secure_config.py
 # Author: Brian Anderson
 # Origin Date: 06May2025
-# Version: 1.3
+# Version: 1.4
 #
 # Purpose:
 #    /Connect to Interactive Brokers (IBKR) via ib_insync
@@ -14,6 +14,8 @@
 #- Paper vs Real is controlled by environment config via ibkr_secure_config
 #- Does not send any orders by default
 #- Logs connection and readiness
+
+# Explore
 
 ORDER_COUNT = 0
 
@@ -32,9 +34,36 @@ ENABLE_CONFIG_LOGGING = 'Y'
 ENABLE_LOG_DEDUP = 'Y'
 
 # Explain time definitions
+# Beware of permitting orders to be released at exact times below,
+# as market flow becomes unstable near closures and openings.
+# Ideally, +/- one minute avoidance of the time changes, is a safer approach,
+# except for options after hours between 4pm and 4:15pm.
+
+# === MARKET TIME DELINEATION ===
+
+# It is no ideal to be holding a heavy futures position during 2 to 4 am.
+MORNING_FUTURES_EURO_CLOSE = dtime(2,0)  
+MORNING_FUTURES_EURO_OPEN = dtime(4,0)
+
+This is the point when most brokerages permit retail purchase activity.
 PREMARKET_OPEN = dtime(7,0)
 MARKET_OPEN = dtime(9,30)
-MARKET_CLOSE = dtime(20,0)
+
+# Brokerages close options activity for most equities.
+MARKET_CLOSE = dtime(16,0)
+POSTMARKET_OPEN = dtime(16,0)
+
+# Most brokerages shut down the trading period of special options at this point.
+POSTMARKET_OPTIONS_CLOSE = dtime(16,15)  
+
+# American futures market closes for maintenance from 5 to 6 pm.
+FUTURES_AMERICAN_CLOSE = dtime(17,0)  
+FUTURES_AMERICAN_OPEN = dtime(18,0)
+
+# No further trading of equities.
+AFTERMARKET_CLOSE = dtime(20,0)  
+
+# === END OF MARKET TIME DELINEATION ===
 
 
 # Global error cache for deduplication
@@ -55,11 +84,12 @@ import logging
 import time
 
 # If choosing to send data to OneDrive...
-# repace 'with open(... , with the following:
-# onedrive_path = Path("C:/Users/yourname/OneDrive/IBKR/positions.json")
+# replace 'with open(... , with the following:
+# onedrive_path = Path("C:/Users/Butchman2000/OneDrive/IBKR/positions.json")
 # with open(onedrive_path, "w") as f:
 #
 # do the same for the csv path
+# add a note to .gitignore for safety
 
 # Setup logging
 LOG_PATH = Path("ibkr_secure_config.log")
@@ -102,7 +132,7 @@ def get_ibkr_config():
             raise
 
     config = {
-        "USE_PAPER": _get_env("USE_PAPER", "True", lambda x: x.lower() == "true"),
+        "USE_PAPER": _get_env("USE_PAPER", "True", lambda x: x.lower() == "true"),  # TODO: ensure my use of lambda is correct
         "IB_GATEWAY_HOST": _get_env("IB_GATEWAY_HOST", "127.0.0.1"),
         "IB_GATEWAY_PORT_PAPER": _get_env("IB_GATEWAY_PORT_PAPER", 7497, int),
         "IB_GATEWAY_PORT_LIVE": _get_env("IB_GATEWAY_PORT_LIVE", 7496, int),
@@ -160,7 +190,16 @@ if ENABLE_CONFIG_VALIDATION == 'Y':
 
 USE_PAPER = config["USE_PAPER"]
 IB_GATEWAY_HOST = config["IB_GATEWAY_HOST"]
-IB_GATEWAY_PORT = config["IB_GATEWAY_PORT_PAPER"] if USE_PAPER else config["IB_GATEWAY_PORT_LIVE"]
+
+# -----/// DO NOT ALTER UNDER ANY CONDITIONS ///-----
+
+if USE_PAPER == True:
+    IB_GATEWAY_PORT = config["IB_GATEWAY_PORT_PAPER"] 
+else
+    IB_GATEWAY_PORT = config["IB_GATEWAY_PORT_LIVE"]
+
+# -----/// DO NOT ALTER UNDER ANY CONDITIONS ///-----
+
 IB_CLIENT_ID = config["IB_CLIENT_ID"]
 
 # Time window example (US Eastern time)
@@ -178,7 +217,11 @@ def connect_ibkr():
     ib = IB()
     try:
         ib.connect(IB_GATEWAY_HOST, IB_GATEWAY_PORT, clientId=IB_CLIENT_ID)
-        print(f"Connected to IBKR ({'Paper' if USE_PAPER else 'Live'})")
+        if USE_PAPER == True:
+            print(f"Connected to IBKR ({'Paper'})
+        else:
+            print(f"Connected to IBKR ({'Live'}))
+
         if ENABLE_CONFIG_LOGGING == 'Y':
             logging.info("IBKR connection successful.")
     except Exception as e:

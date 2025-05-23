@@ -1,11 +1,12 @@
-# Program: Backtest Exclusion Criterion for 2019
+# Program: exlusions_2019.py
 # Author: Brian Anderson
 # Origin Date: 30April2025
 # Version: 1.0
 # 
 # Purpose:
-#   /Assemble market dates for critical days that most strongly affect market activity.
-#   /Specifies spans of time for which alteration of trading activity should be considered.
+#    /Backtest exclusion criterion for the year of 2019
+#    /Assemble market dates for critical days that most strongly affect market activity.
+#    /Specifies spans of time for which alteration of trading activity should be considered.
 
 from datetime import datetime, time
 

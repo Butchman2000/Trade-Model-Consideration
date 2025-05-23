@@ -1,10 +1,10 @@
-# Program: audit_logger
+# Program: audit_logger.py
 # Author: Brian Anderson
 # Origin Date: 11May2025
 # Version: 1.0
 #
 # Purpose:
-#    /This is an audit logger utility.
+#    /This is an audit logger utility program
 
 import json
 import hashlib

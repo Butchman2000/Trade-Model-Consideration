@@ -1,5 +1,6 @@
-# Program: config_loader_module
+# Program: config_loader_module.py
 # Author: Brian Anderson
+# Origin Date: May2025
 # Version: 1.1
 # Purpose:
 #
@@ -13,9 +14,8 @@ class ConfigLoader:
     # It exposes typed accessor methods for common data types (float, string, list).
     
     def __init__(self, config_path="config.ini"):
-        # This initializes the loader, which by default, looks for a file named
-        # 'config.ini' in the working dir. Can specify different path by passing it
-        # as a config_path
+        # This initializes the loader, which by default, looks for a file named 'config.ini'
+        # in the working dir. Can specify different path by passing it as a config_path.
         
         self.config = configparser.ConfigParser()
         self.config.read(config_path)

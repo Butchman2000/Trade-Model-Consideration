@@ -1,4 +1,4 @@
-# Helper Function: vix_whipsaw_filter
+# Program: vix_whipsaw_filter.py
 # Author: Brian Anderson
 # Origin Date: 30April2025
 # Version: 1.1

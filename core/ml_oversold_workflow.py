@@ -1,23 +1,26 @@
-# Program: ML_oversold_workflow
+# Program: ml_oversold_workflow.py
 # Author: Brian Anderson
 # Origin Date: 11May2025
 # Version: 1.2
 #
 # Purpose:
-#    /
-#    /
-#    /
-
-'''
-Example Workflow with Machine Learning and Oversold Condition Handling
-
-Goal: Dynamically assign trade module weights based on market conditions,
-      including technical, sentiment, and fundamental oversold definitions.
-'''
+#    /Dynamically assign trade module weights based on market conditions including technical, sentiment, and fundamental oversold definitions.
+#    /Example Workflow with Machine Learning and Oversold Condition Handling
 
 # NOTE: This script currently ends with allocation output only.
 # An executor is the next logical component; it would take these bin_weights
 # and translate them into actual trades, simulations, or order instructions.
+
+# (goto Label A)  which is at the very bottom
+# === Optional: Later replace this with AuditLogger.log(...) ===
+# from audit_logger import AuditLogger
+# logger = AuditLogger()
+# logger.log(MODE, condition_type, bin_weights, recent_row.to_dict())
+
+# === TODO Next Steps ===
+# - Feed bin_weights into portfolio executor
+# - Track performance per bin per regime
+# - Continuously refine model thresholds and logic
 
 import numpy as np
 import pandas as pd
@@ -36,8 +39,8 @@ MODE = "Manual"  # options: "Manual", "ML enabled", "ML off"
 
 constraints = cfg.get_constraints()
 MAX_BIN_WEIGHT = constraints["max_bin_weight"]  # Max % per module (6%)
-MIN_BIN_WEIGHT = constraints["min_bin_weight"]  # Min % per module (2.5%)
-
+MIN_BIN_WEIGHT = constraints["min_bin_weight"]  # Min % per module (2.5%)  
+# This may not be necessary, unless there is later competition for bin space from other models that want action.
 
 total_alloc = constraints["total_portfolio_allocation"]
 # This was originally hard set to 80% (maximum) of account in automated bins
@@ -130,12 +133,4 @@ log_entry = {
 with open("allocation_log.jsonl", "a") as f:
     f.write(json.dumps(log_entry) + "\n")
 
-# === Optional: Later replace this with AuditLogger.log(...) ===
-# from audit_logger import AuditLogger
-# logger = AuditLogger()
-# logger.log(MODE, condition_type, bin_weights, recent_row.to_dict())
-
-# === Next steps ===
-# - Feed bin_weights into portfolio executor
-# - Track performance per bin per regime
-# - Continuously refine model thresholds and logic
+# (Label A)

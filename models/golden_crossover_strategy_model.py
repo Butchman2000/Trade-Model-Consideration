@@ -1,4 +1,4 @@
-# Program: golden_cross_strategy_model
+# Program: golden_cross_strategy_model.py
 # Author: Brian Anderson
 # Origin Date: 01May2025
 # Version: 1.4

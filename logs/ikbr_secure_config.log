@@ -1,8 +1,8 @@
-# Ensure that this is excluded by .gitignore
-# Program: ikbr_secure_config (log, not py)
+# Program: ikbr_secure_config.log
 # Author: Brian Anderson
 # Origin Date: 12May2025
 # Version: 1.0
 #
 # Purpose:
 #    /Provide a file wherein config logs can be stored/appended.
+#    /Currently just a placeholder for eventual collection of related data.

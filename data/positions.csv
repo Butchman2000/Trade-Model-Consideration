@@ -1,10 +1,8 @@
 # Ensure to be excluded by .gitignore
-# Program: positions (csv, not py)
+# Program: positions.csv
 # Author: Brian Anderson
 # Origin Date: 12May2025
 # Version: 1.0
 #
 # Purpose:
-#    /Provide a file for adding/appending position data.
-#    /This may not be the correct format for a .csv.
-#    /If that is the case, I will create an excel or similar file, as necessary.
+#    /Provide a file placeholder, for adding/appending position data.

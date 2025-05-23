@@ -1,10 +1,10 @@
-# Module: enforce_allocation_rules_oneTOfive
+# Module: enforce_allocation_rules_oneTOfive.py
 # Author: Brian Anderson
 # Origin Date: 11May2025
 # Version: 1.1
-
+#
 # Purpose:
-#    /Begin converting risk allocation rules into code-based enforcement
+#    /Begin converting risk allocation rules into code-based enforcement.
 
 '''
 ========== RULE BASED FRAMEWORK ==========

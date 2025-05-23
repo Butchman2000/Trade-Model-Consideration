@@ -1,13 +1,15 @@
-Program: date_time_operations_commander
+Program: date_time_ops_commander.py
 Author: Brian Anderson
 Origin Date: 10May2025
-Version: 1.0
+Version: 1.1
 #
 # Purpose:
-#    /Lay down rules for when to enable what, on which days, and at what times.
-#    /For example, at 4:15 am on a Tuesday, pre-market: no trading on stocks, nor options
+#    /Establish and elucidate rules and action enabling/disabling, for different days and specific times.
+#    /E.g, at 4:15 am on a Tuesday, pre-market: no trading of stocks, no options,
 #    /but asian-open mode for futures which is open for trading at that point.
 #    /This checks against the exclusion list for the year in which the program checks.
+
+# NOTE: There is extensive idea development at the bottom, in the form of TODO.
 
 from date_time import datetime
 from exclusions.exclusions_2025 import (    #change the year as needed

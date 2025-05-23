@@ -1,13 +1,14 @@
-# Program: Backtest Exclusion Criterion for 2022
+# Program: exclusions_2022.py
 # Author: Brian Anderson
 # Origin Date: 30April2025
 # Version: 1.0
 # 
 # Purpose:
-#   /Assemble market dates for critical days that most strongly affect market activity.
-#   /Specifies spans of time for which alteration of trading activity should be considered.
-#   /For example, since FOMC meetings are released around 2:30 pm, we make choices at 1:45 pm,
-#   /as to whether to withdraw trades, or make other actions (todo).
+#    /Backtest exclusion criterion for the year of 2022
+#    /Assemble market dates for critical days that most strongly affect market activity.
+#    /Specifies spans of time for which alteration of trading activity should be considered.
+#    /For example, since FOMC meetings are released around 2:30 pm, we make choices at 1:45 pm,
+#    /as to whether to withdraw trades, or make other actions (todo).
 
 from datetime import datetime, time
 

@@ -1,4 +1,4 @@
-# Helper Program: volatility_momentum_adjustments
+# Program: volatility_momentum_adjustments.py
 # Author: Brian Anderson
 # Origin Date: 01May2025
 # Version: 1.0
@@ -10,6 +10,7 @@
 #   /should provide an organically-adaptive framework that anneals out the presuppositions of continuous
 #   /market behavior--faster growth, but more aggressive-adjusting over the previous 20 years or so.
 
+# May be missing an import here, check later
 
 def internal_volatility_adjusted_momentum(data):
     '''
@@ -73,7 +74,7 @@ def internal_volatility_adjusted_momentum(data):
                 return internal_momentum_weighted
 
             if internal_momentum_6mo < internal_momentum_12mo
-                # up, cool? fair enough, lets trust the 6 month a little more this time
+                # up, and then cool off he past 6 months? fair enough, lets trust the 6 month a little more this time
                 internal_momentum_weighted = ((4*internal_momentum_6mo)+(5*internal_momentum_12mo))/9)
                 # should probably weight this as well, in consideration of previous 6 and 12 mo windows
                 return internal_momentum_weighted

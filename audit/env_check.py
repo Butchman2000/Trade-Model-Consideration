@@ -1,4 +1,4 @@
-# Program: env_check
+# Program: env_check.py
 # Author: Brian Anderson
 # Origin Date: 01May2025
 # Version: 1.0
